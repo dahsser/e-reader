@@ -201,6 +201,26 @@ test("a file that isn't a PDF never opens clean-up, even when the shelf is full"
   expect(await bookCount(page)).toBe(2);
 });
 
+test("a file larger than the whole shelf gets a message, not clean-up", async ({ page }) => {
+  // scan fits; long alone is larger than the cap.
+  const cap = size("long") - 1;
+  expect(size("scan")).toBeLessThan(cap);
+  await page.goto(`/?capBytes=${cap}`);
+  await uploadFirst(page, "scan");
+
+  await openShelf(page);
+  await shelf(page).getByTestId("shelf-upload").setInputFiles(fixture("long"));
+
+  const mb = (bytes: number) => `${Math.round(bytes / 1048576)} MB`;
+  await expect(page.getByRole("alert")).toContainText(
+    `This file (${mb(size("long"))}) is larger than the ${mb(cap)} shelf`,
+  );
+  await expect(cleanup(page)).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await expectOpen(page, "scan");
+  expect(await bookCount(page)).toBe(1);
+});
+
 test("cancel leaves everything as it was", async ({ page }) => {
   await page.goto(tightCap());
   await uploadFirst(page, "mixed");

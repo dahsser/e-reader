@@ -6,6 +6,7 @@ import type { ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
 import { clampZoom, loadSettings, saveSettings, ZOOM_STEP, type Settings } from "./settings/settings";
 import { CleanupDialog } from "./shelf/CleanupDialog";
+import { formatMB } from "./shelf/format";
 import { Shelf } from "./shelf/Shelf";
 import { LibraryFullError } from "./storage/library";
 import type { BookMeta, Position } from "./storage/metaDb";
@@ -187,6 +188,12 @@ export default function App() {
           return await openBookById(meta.id);
         } catch (e) {
           if (!(e instanceof LibraryFullError)) throw e;
+          const { usedBytes, capBytes } = await services.library.usage();
+          if (e.neededBytes > usedBytes) {
+            // Even an empty shelf couldn't hold it: there's no room to make.
+            showToast(`This file (${formatMB(file.size)}) is larger than the ${formatMB(capBytes)} shelf`);
+            return "not added";
+          }
           // The size check runs before the file is parsed: only offer clean-up for a file we can add.
           await assertOpensAsPdf(file, services.engine);
           setPending({ file, neededBytes: e.neededBytes });
