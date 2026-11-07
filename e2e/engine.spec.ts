@@ -63,3 +63,29 @@ test("aborting a render rejects with AbortError", async ({ page }) => {
   }, mixed());
   expect(name).toBe("AbortError");
 });
+
+test("aborting an in-flight render cancels the pdf.js task and rejects with AbortError", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => "__engine" in window);
+  const result = await page.evaluate(async (bytes) => {
+    const doc = await window.__engine.open(new Uint8Array(bytes));
+    await doc.renderPage(1, document.createElement("canvas"), 0.1); // warm the page so getPage resolves fast
+    const ctrl = new AbortController();
+    const p = doc.renderPage(1, document.createElement("canvas"), 4, ctrl.signal);
+    let settled = false;
+    p.then(() => (settled = true), () => (settled = true));
+    await new Promise((r) => setTimeout(r, 0));
+    const abortedBeforeSettled = !settled;
+    ctrl.abort();
+    try {
+      await p;
+      return { name: "resolved", abortedBeforeSettled };
+    } catch (e) {
+      return { name: (e as Error).name, abortedBeforeSettled };
+    } finally {
+      await doc.destroy();
+    }
+  }, mixed());
+  expect(result.abortedBeforeSettled).toBe(true);
+  expect(result.name).toBe("AbortError");
+});
