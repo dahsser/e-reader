@@ -1,0 +1,17 @@
+{
+  "name": "engine-bench",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@hyzyla/pdfium": "3.0.0",
+    "mupdf": "1.28.1",
+    "pdfjs-dist": "6.5.438"
+  },
+  "devDependencies": {
+    "vite": "^8.3.5"
+  }
+}

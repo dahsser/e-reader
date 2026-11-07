@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Scroll Test (spike)</title>
+  <style>
+    :root { color-scheme: dark; --bg:#14161a; --panel:#1d2026ee; --line:#2c313a; --fg:#e6e6e6; --dim:#9aa0aa; --accent:#7cc4ff; --good:#7ddf9a; --warn:#ffd27a; --bad:#ff8a80; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:13px/1.4 system-ui, sans-serif; }
+    header { position:fixed; inset:0 0 auto 0; z-index:10; background:var(--panel); backdrop-filter:blur(6px); border-bottom:1px solid var(--line);
+             display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:8px 16px; }
+    header a { color:var(--accent); }
+    select, button, input[type=number] { background:#2a3240; color:var(--fg); border:1px solid #3a4456; border-radius:6px; padding:5px 9px; font:inherit; }
+    input[type=number] { width:80px; background:#111; }
+    button.on { background:#2b5a85; border-color:#3d79b0; }
+    button:disabled, select:disabled { opacity:.45; }
+    .lbl { color:var(--dim); }
+    #stats { position:fixed; right:16px; bottom:16px; z-index:10; background:var(--panel); border:1px solid var(--line); border-radius:8px;
+             padding:10px 12px; font:12px/1.55 ui-monospace, monospace; min-width:270px; white-space:pre; }
+    #stats .good { color:var(--good); } #stats .warn { color:var(--warn); } #stats .bad { color:var(--bad); }
+    #pages { padding:64px 16px 40vh; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    .page { position:relative; background:#2a2d33; border-radius:2px; box-shadow:0 1px 6px #0008; flex:none; }
+    .page::before { content:attr(data-n); position:absolute; inset:0; display:grid; place-items:center; color:#555b66; font-size:28px; }
+    .page canvas { position:relative; display:block; width:100%; height:100%; }
+    #hint { color:var(--dim); text-align:center; margin-top:30vh; }
+  </style>
+</head>
+<body>
+<header>
+  <a href="/">← bench</a>
+  <label class="lbl">PDF <input id="file" type="file" accept="application/pdf" /></label>
+  <button id="sample">Load sample</button>
+  <span class="lbl">Engine</span>
+  <select id="engine" disabled>
+    <option value="pdfjs">pdf.js (worker parse, main-thread paint)</option>
+    <option value="mupdf">MuPDF (worker)</option>
+    <option value="pdfium">PDFium (worker)</option>
+  </select>
+  <span class="lbl">Auto-scroll</span>
+  <button data-speed="800" class="speed" disabled>Reading</button>
+  <button data-speed="3000" class="speed" disabled>Skimming</button>
+  <button data-speed="9000" class="speed" disabled>Flinging</button>
+  <button id="reset" disabled>Reset stats</button>
+</header>
+<div id="stats">Pick a PDF or Load sample.</div>
+<div id="pages"><div id="hint">Pages appear here. Scroll with the wheel/trackpad, or use auto-scroll.</div></div>
+<script type="module" src="/scroll.js"></script>
+</body>
+</html>

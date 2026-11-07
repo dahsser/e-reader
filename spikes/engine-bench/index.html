@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF Engine Bench (spike)</title>
+  <style>
+    :root { color-scheme: dark; --bg:#14161a; --panel:#1d2026; --line:#2c313a; --fg:#e6e6e6; --dim:#9aa0aa; --accent:#7cc4ff; --good:#7ddf9a; --bad:#ff8a80; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.45 system-ui, sans-serif; }
+    main { max-width:1300px; margin:0 auto; padding:20px 16px 60px; }
+    h1 { font-size:18px; margin:0 0 4px; } .sub { color:var(--dim); margin:0 0 16px; }
+    .controls { display:flex; flex-wrap:wrap; gap:12px; align-items:end; background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:12px; }
+    label { display:flex; flex-direction:column; gap:4px; color:var(--dim); font-size:12px; }
+    input[type=text], input[type=number] { width:90px; background:#111; color:var(--fg); border:1px solid var(--line); border-radius:5px; padding:6px; }
+    button { background:#2a3240; color:var(--fg); border:1px solid #3a4456; border-radius:6px; padding:7px 12px; cursor:pointer; }
+    button.primary { background:#2b5a85; border-color:#3d79b0; }
+    button:disabled { opacity:.45; cursor:default; }
+    #status { margin:12px 0; color:var(--accent); min-height:1.4em; font-family:ui-monospace, monospace; }
+    #heartbeat { display:inline-block; width:10px; height:10px; border-radius:50%; background:var(--good); margin-right:6px; vertical-align:middle; }
+    table { width:100%; border-collapse:collapse; margin:8px 0 20px; font-variant-numeric:tabular-nums; }
+    th, td { text-align:right; padding:7px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th:first-child, td:first-child { text-align:left; }
+    th { color:var(--dim); font-weight:500; font-size:12px; }
+    td.best { color:var(--good); font-weight:600; }
+    .note { color:var(--dim); font-size:12px; max-width:900px; }
+    .previews { display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:14px; }
+    .preview { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px; }
+    .preview h3 { margin:0 0 6px; font-size:13px; } .preview .dims { color:var(--dim); font-size:12px; margin-bottom:6px; }
+    .preview canvas { width:100%; height:auto; background:#fff; display:block; }
+    .scroll { overflow-x:auto; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>PDF engine bench <span style="color:var(--dim);font-weight:400">(throwaway spike)</span> · <a href="/scroll.html" style="color:var(--accent);font-size:14px">scroll test →</a></h1>
+  <p class="sub">Pick a PDF — ideally a heavy technical book with diagrams. Everything stays in this browser tab.</p>
+
+  <div class="controls">
+    <label>PDF file <input id="file" type="file" accept="application/pdf" /></label>
+    <label>Pages (e.g. 1-10 or 3,7,40) <input id="pages" type="text" value="1-10" /></label>
+    <label>Scale <input id="scale" type="number" value="2" step="0.25" min="0.5" max="4" /></label>
+    <label>Repeats / page <input id="repeats" type="number" value="3" min="1" max="10" /></label>
+    <label>Preview page <input id="previewPage" type="number" value="1" min="1" /></label>
+    <button id="run-pdfjs" disabled>Run pdf.js</button>
+    <button id="run-mupdf" disabled>Run MuPDF</button>
+    <button id="run-pdfium" disabled>Run PDFium</button>
+    <button id="run-all" class="primary" disabled>Run all (sequential)</button>
+  </div>
+
+  <div id="status"><span id="heartbeat"></span><span id="status-text">Waiting for a PDF…</span></div>
+
+  <div class="scroll">
+    <table>
+      <thead><tr>
+        <th>Engine</th><th>Ships (gzip)</th><th>Init</th><th>Open doc</th>
+        <th>1st page (cold)</th><th>New page (median)</th><th>New page (p95)</th><th>Re-render (median)</th>
+        <th>Longest UI freeze</th><th>Output px</th><th>License</th>
+      </tr></thead>
+      <tbody id="results"></tbody>
+    </table>
+  </div>
+  <p class="note">
+    All times are wall-clock ms on this machine, from "render page N" until the pixels are on a canvas — what you'd feel as a reader.
+    Engines run one after another, never at the same time. <b>Longest UI freeze</b> = the biggest gap in a 16&nbsp;ms heartbeat
+    while that engine ran (the green dot above stutters when the page is frozen). pdf.js parses in a worker; MuPDF and PDFium here
+    run on the main thread, so their freeze ≈ their render time — in a worker it would drop to ~0. <b>New page</b> = first time each page
+    is drawn (reading forward) — the column that matters most. <b>Re-render</b> = same page again (zoom, night-mode toggle); pdf.js caches
+    parsed pages there, the other two adapters re-parse (they could cache too). MuPDF's time includes a JS RGB→RGBA copy a real
+    integration would skip. <b>Ships</b> = gzip size of the production engine files. Init is only cold on the first run after page
+    load — reload the tab to re-measure it.
+  </p>
+
+  <h2 style="font-size:15px">Same page, three engines — check fidelity</h2>
+  <div class="previews" id="previews"></div>
+</main>
+<script type="module" src="/main.js"></script>
+</body>
+</html>
