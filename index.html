@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reader</title>
+    <link rel="icon" href="data:," />
+    <style>
+      :root { --app-bg: #e8e6e1; --chrome-bg: #f7f6f3; --fg: #1d1d1b; --page-bg: #ffffff; }
+      :root[data-theme="night"] { --app-bg: #121110; --chrome-bg: #1b1a18; --fg: #d8d2c6; --page-bg: #1b1a18; color-scheme: dark; }
+      html, body { background: var(--app-bg); color: var(--fg); }
+    </style>
+    <script>
+      (function () {
+        var night;
+        try {
+          var s = JSON.parse(localStorage.getItem("reader.settings"));
+          if (s && typeof s.night === "boolean") night = s.night;
+        } catch (e) {}
+        if (night === undefined) {
+          try { night = matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { night = false; }
+        }
+        document.documentElement.dataset.theme = night ? "night" : "day";
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
