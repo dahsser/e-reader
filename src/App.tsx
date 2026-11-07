@@ -5,11 +5,15 @@ import { Reader } from "./reader/Reader";
 import type { ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
 import { clampZoom, loadSettings, saveSettings, ZOOM_STEP, type Settings } from "./settings/settings";
+import { CleanupDialog } from "./shelf/CleanupDialog";
+import { Shelf } from "./shelf/Shelf";
+import { LibraryFullError } from "./storage/library";
 import type { BookMeta, Position } from "./storage/metaDb";
 import { EmptyState } from "./ui/EmptyState";
+import { PersistNotice } from "./ui/PersistNotice";
 import { Toast } from "./ui/Toast";
 import { Toolbar } from "./ui/Toolbar";
-import { uploadBook, uploadErrorMessage } from "./ui/upload";
+import { dismissPersistNotice, persistNoticeDue, uploadBook, uploadErrorMessage } from "./ui/upload";
 
 interface OpenBook {
   /** Unique per open, so reopening remounts the Reader. */
@@ -18,6 +22,15 @@ interface OpenBook {
   doc: PdfDoc;
   sizes: PageSize[];
   position: Position | null;
+}
+
+/** "superseded": a later open (or close) took over before this one finished. */
+type OpenResult = "opened" | "failed" | "superseded";
+
+/** An upload waiting for the user to make room. */
+interface PendingUpload {
+  file: File;
+  neededBytes: number;
 }
 
 function errorText(e: unknown): string {
@@ -35,17 +48,24 @@ export default function App() {
   const [page, setPage] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
+  const [shelfOpen, setShelfOpen] = useState(false);
+  /** Bumped whenever the library changes, so an open shelf reloads. */
+  const [libraryVersion, setLibraryVersion] = useState(0);
+  const [pending, setPending] = useState<PendingUpload | null>(null);
+  const [persistNotice, setPersistNotice] = useState(false);
 
   const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const dismissToast = useCallback(() => setToast(null), []);
+  const libraryChanged = useCallback(() => setLibraryVersion((v) => v + 1), []);
+  const showPersistNotice = useCallback(() => setPersistNotice(true), []);
 
   const openBookById = useCallback(
-    async (id: string) => {
+    async (id: string): Promise<OpenResult> => {
       const seq = ++openSeq.current;
       try {
         const { engine, library } = await getServices();
         const { book: meta, bytes, position } = await library.openBook(id);
-        if (seq !== openSeq.current) return;
+        if (seq !== openSeq.current) return "superseded";
         const doc = await engine.open(bytes);
         let sizes: PageSize[];
         try {
@@ -56,7 +76,7 @@ export default function App() {
         }
         if (seq !== openSeq.current) {
           void doc.destroy();
-          return;
+          return "superseded";
         }
         const prev = bookRef.current;
         if (prev) retiredDocs.current.push(prev.doc);
@@ -64,13 +84,47 @@ export default function App() {
         bookRef.current = next;
         setPage(position?.page ?? 0);
         setBook(next);
+        return "opened";
       } catch (e) {
-        if (seq === openSeq.current) showToast(`Couldn't open this book: ${errorText(e)}`);
+        if (seq !== openSeq.current) return "superseded";
+        showToast(`Couldn't open this book: ${errorText(e)}`);
+        return "failed";
       } finally {
         if (seq === openSeq.current) setReady(true);
+        libraryChanged(); // lastOpenedAt moved
       }
     },
-    [showToast],
+    [showToast, libraryChanged],
+  );
+
+  /** Show the empty state; cancels any open in flight. */
+  const closeBook = useCallback(() => {
+    ++openSeq.current;
+    const prev = bookRef.current;
+    if (prev) retiredDocs.current.push(prev.doc);
+    bookRef.current = null;
+    setBook(null);
+    setPage(0);
+    setReady(true);
+  }, []);
+
+  /**
+   * Open the first book in shelf order that opens, skipping `tried`; the empty state if none does.
+   * `openBook` stamps a book as last-opened before the engine has parsed it, so a broken book
+   * would otherwise be retried first on every launch.
+   */
+  const openFirstAvailable = useCallback(
+    async (tried: Set<string>) => {
+      const { library } = await getServices();
+      for (const b of await library.listBooks()) {
+        if (tried.has(b.id)) continue;
+        tried.add(b.id);
+        const result = await openBookById(b.id);
+        if (result !== "failed") return;
+      }
+      closeBook();
+    },
+    [openBookById, closeBook],
   );
 
   // Destroy documents of books we switched away from, after the old Reader unmounted.
@@ -87,8 +141,8 @@ export default function App() {
         const { library } = await getServices();
         const id = await library.getLastBookId();
         if (cancelled) return;
-        if (id) await openBookById(id);
-        else setReady(true);
+        if (!id) setReady(true);
+        else if ((await openBookById(id)) === "failed" && !cancelled) await openFirstAvailable(new Set([id]));
       } catch (e) {
         if (cancelled) return;
         showToast(`Couldn't load the library: ${errorText(e)}`);
@@ -98,21 +152,98 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [openBookById, showToast]);
+  }, [openBookById, openFirstAvailable, showToast]);
+
+  // The persistence notice stays until dismissed.
+  useEffect(() => {
+    let cancelled = false;
+    void persistNoticeDue()
+      .then((due) => !cancelled && due && setPersistNotice(true))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onDismissPersistNotice = useCallback(() => {
+    dismissPersistNotice();
+    setPersistNotice(false);
+  }, []);
+
+  /** Add the file and open it; if the shelf is full, ask the user to make room. */
+  const addAndOpen = useCallback(
+    async (file: File): Promise<OpenResult | "not added"> => {
+      try {
+        const meta = await uploadBook(file, await getServices(), { onPersistenceDenied: showPersistNotice });
+        setShelfOpen(false);
+        return await openBookById(meta.id);
+      } catch (e) {
+        if (e instanceof LibraryFullError) setPending({ file, neededBytes: e.neededBytes });
+        else showToast(uploadErrorMessage(e));
+        return "not added";
+      } finally {
+        libraryChanged();
+      }
+    },
+    [openBookById, showToast, showPersistNotice, libraryChanged],
+  );
 
   const onFile = useCallback(
     async (file: File) => {
       setBusy(true);
       try {
-        const meta = await uploadBook(file, await getServices());
-        await openBookById(meta.id);
-      } catch (e) {
-        showToast(uploadErrorMessage(e));
+        await addAndOpen(file);
       } finally {
         setBusy(false);
       }
     },
-    [openBookById, showToast],
+    [addAndOpen],
+  );
+
+  const onCleanupConfirm = useCallback(
+    async (ids: string[]) => {
+      if (!pending) return;
+      const { file } = pending;
+      const removedOpenBook = bookRef.current !== null && ids.includes(bookRef.current.meta.id);
+      setPending(null);
+      setShelfOpen(false);
+      setBusy(true);
+      try {
+        const { library } = await getServices();
+        try {
+          await library.removeBooks(ids);
+        } catch (e) {
+          showToast(`Couldn't remove books: ${errorText(e)}`);
+          // Removal may have stopped part-way, after the open book was already gone.
+          const openId = bookRef.current?.meta.id;
+          if (removedOpenBook && openId && !(await library.listBooks()).some((b) => b.id === openId)) {
+            await openFirstAvailable(new Set());
+          }
+          return;
+        } finally {
+          libraryChanged();
+        }
+        const result = await addAndOpen(file);
+        // The removed book is still on screen unless something else opened.
+        if (removedOpenBook && (result === "failed" || result === "not added")) {
+          await openFirstAvailable(new Set());
+        }
+      } finally {
+        setBusy(false);
+      }
+    },
+    [pending, addAndOpen, openFirstAvailable, showToast, libraryChanged],
+  );
+  const onCleanupCancel = useCallback(() => setPending(null), []);
+
+  const openShelf = useCallback(() => setShelfOpen(true), []);
+  const closeShelf = useCallback(() => setShelfOpen(false), []);
+  const onShelfOpenBook = useCallback(
+    (id: string) => {
+      setShelfOpen(false);
+      if (bookRef.current?.meta.id !== id) void openBookById(id);
+    },
+    [openBookById],
   );
 
   const changeZoom = useCallback((next: (zoom: number) => number) => {
@@ -184,8 +315,10 @@ export default function App() {
         night={settings.night}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
+        onShelf={openShelf}
         onToggleNight={toggleNight}
       />
+      {persistNotice && <PersistNotice onDismiss={onDismissPersistNotice} />}
       {book ? (
         <Reader
           key={book.session}
@@ -201,6 +334,26 @@ export default function App() {
         <EmptyState busy={busy} onFile={onFile} />
       ) : (
         <main className="loading" aria-busy="true" />
+      )}
+      {shelfOpen && (
+        <Shelf
+          version={libraryVersion}
+          currentId={book?.meta.id ?? null}
+          busy={busy}
+          onOpenBook={onShelfOpenBook}
+          onFile={onFile}
+          onClose={closeShelf}
+        />
+      )}
+      {pending && (
+        <CleanupDialog
+          key={`${pending.file.name}:${pending.neededBytes}`}
+          fileName={pending.file.name}
+          neededBytes={pending.neededBytes}
+          busy={busy}
+          onConfirm={onCleanupConfirm}
+          onCancel={onCleanupCancel}
+        />
       )}
       {toast && <Toast key={toast.id} message={toast.text} onDismiss={dismissToast} />}
     </div>

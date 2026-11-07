@@ -5,15 +5,14 @@ export interface ToolbarProps {
   night: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
-  /** Wired by the shelf (Task 8); the button is inert until then. */
-  onShelf?: () => void;
+  onShelf: () => void;
   onToggleNight: () => void;
 }
 
 export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight }: ToolbarProps) {
   return (
     <header className="toolbar" role="toolbar" aria-label="Reader controls">
-      <button type="button" aria-label="Shelf" disabled={!onShelf} onClick={onShelf}>
+      <button type="button" aria-label="Shelf" title="Shelf" onClick={onShelf}>
         ☰
       </button>
       <span className="toolbar-spacer" />

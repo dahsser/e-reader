@@ -68,3 +68,72 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app-bg
   box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
 }
 .toast-close { border: 0; background: transparent; color: inherit; font-size: 18px; cursor: pointer; }
+
+/* Persistence notice: in the flow (never over the pages), compact. */
+.notice {
+  flex: none; display: flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 30px; padding: 0 8px 0 16px; box-sizing: border-box;
+  background: var(--chrome-bg); color: var(--fg); font-size: 13px;
+  border-bottom: 1px solid color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
+/* Dialogs (shelf, make room): themed, never white at night. */
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; box-sizing: border-box;
+  background: rgb(0 0 0 / 0.45);
+}
+.modal {
+  display: flex; flex-direction: column; gap: 10px;
+  width: min(540px, 100%); max-height: 100%; box-sizing: border-box; padding: 16px 18px;
+  background: var(--chrome-bg); color: var(--fg); border-radius: 10px;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
+}
+.modal:focus { outline: none; }
+.modal h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.modal-header { display: flex; align-items: center; justify-content: space-between; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.icon-button {
+  min-width: 32px; height: 32px; border: 0; border-radius: 6px;
+  background: transparent; color: inherit; font: inherit; font-size: 20px; cursor: pointer;
+}
+.icon-button:hover { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+button.button-primary { border: 0; font: inherit; }
+button.button-primary:disabled { opacity: 0.45; cursor: default; }
+.button-secondary {
+  padding: 10px 18px; border-radius: 8px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--fg) 35%, transparent);
+  background: transparent; color: inherit; font: inherit;
+}
+.button-secondary:disabled { opacity: 0.45; cursor: default; }
+
+.usage { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+.usage-text { font-variant-numeric: tabular-nums; }
+.usage-bar { height: 6px; border-radius: 3px; overflow: hidden; background: color-mix(in srgb, var(--fg) 14%, transparent); }
+.usage-fill { height: 100%; background: var(--fg); }
+
+.shelf-message { margin: 8px 0; opacity: 0.75; }
+.shelf-list, .cleanup-list { flex: 1; min-height: 0; overflow: auto; margin: 0 -8px; padding: 0; list-style: none; }
+.shelf-book, .cleanup-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; box-sizing: border-box;
+  padding: 8px; border: 0; border-radius: 8px; text-align: left;
+  background: transparent; color: inherit; font: inherit; cursor: pointer;
+}
+.shelf-book:hover, .cleanup-row:hover { background: color-mix(in srgb, var(--fg) 7%, transparent); }
+.shelf-book[aria-current="true"], .cleanup-row[aria-checked="true"] { background: color-mix(in srgb, var(--fg) 13%, transparent); }
+.shelf-book:focus-visible, .cleanup-row:focus-visible { outline: 2px solid var(--fg); outline-offset: -2px; }
+.cleanup-row[aria-disabled="true"] { cursor: default; opacity: 0.6; }
+.thumb { flex: none; width: 44px; height: 58px; border-radius: 3px; object-fit: cover; object-position: top; }
+.thumb-empty { background: color-mix(in srgb, var(--fg) 12%, var(--chrome-bg)); }
+[data-theme="night"] img.thumb { filter: invert(0.88) hue-rotate(180deg) sepia(0.18); }
+.book-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.book-title, .book-detail { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.book-title { font-weight: 600; }
+.book-detail { font-size: 12.5px; opacity: 0.72; font-variant-numeric: tabular-nums; }
+.check {
+  flex: none; display: grid; place-items: center; width: 18px; height: 18px; box-sizing: border-box;
+  border: 1.5px solid currentColor; border-radius: 4px; font-size: 13px; line-height: 1;
+}
+.cleanup-hint { margin: 0; font-size: 13px; opacity: 0.75; }
+.cleanup-status { margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
