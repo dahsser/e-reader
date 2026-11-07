@@ -160,3 +160,73 @@ test("with no last book recorded, startup opens the shelf's first book instead o
   await expect(indicator(page)).toHaveText("10 / 40");
   await expect(uploadInput(page)).toHaveCount(0);
 });
+
+type PositionWriteFlags = { __failPositionWrites?: boolean; __positionWriteFailures?: number };
+
+/** Lets a test make writes to the positions store fail (as a quota/IO error would). */
+function allowPositionWriteFailure(page: Page) {
+  return page.addInitScript(() => {
+    const original = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (this: IDBObjectStore, ...args) {
+      const w = window as PositionWriteFlags;
+      if (w.__failPositionWrites && this.name === "positions") {
+        w.__positionWriteFailures = (w.__positionWriteFailures ?? 0) + 1;
+        throw new DOMException("Injected write failure", "QuotaExceededError");
+      }
+      return original.apply(this, args);
+    } as typeof original;
+  });
+}
+const setPositionWritesFail = (page: Page, fail: boolean) =>
+  page.evaluate((f) => ((window as PositionWriteFlags).__failPositionWrites = f), fail);
+const positionWriteFailures = (page: Page) =>
+  page.evaluate(() => (window as PositionWriteFlags).__positionWriteFailures ?? 0);
+
+/** The stored position's page index for the only book, or null. */
+function storedPage(page: Page): Promise<number | null> {
+  return page.evaluate(
+    () =>
+      new Promise<number | null>((resolve, reject) => {
+        const req = indexedDB.open("pdf-reader");
+        req.onerror = () => reject(req.error);
+        req.onsuccess = () => {
+          const db = req.result;
+          const all = db.transaction("positions").objectStore("positions").getAll();
+          all.onsuccess = () => {
+            db.close();
+            const rows = all.result as { page: number; fraction: number }[];
+            resolve(rows.length ? Math.round(rows[0].page + rows[0].fraction) : null);
+          };
+          all.onerror = () => reject(all.error);
+        };
+      }),
+  );
+}
+
+test("a failed position save is reported once and retried", async ({ page }) => {
+  await allowPositionWriteFailure(page);
+  await openLong(page);
+  await setPositionWritesFail(page, true);
+
+  await scrollToPage(page, 9);
+  await expect(indicator(page)).toHaveText("10 / 40");
+  await expect(page.getByRole("alert")).toContainText("Couldn't save your reading position: Injected write failure");
+  await page.getByRole("alert").getByRole("button", { name: "Dismiss" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+
+  // Another failing save isn't reported again.
+  const failures = await positionWriteFailures(page);
+  await scrollToPage(page, 14);
+  await expect(indicator(page)).toHaveText("15 / 40");
+  await expect.poll(() => positionWriteFailures(page)).toBeGreaterThan(failures);
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  expect(await storedPage(page)).toBeNull();
+
+  // With storage working again, the unsaved position is written on pagehide, without scrolling.
+  await setPositionWritesFail(page, false);
+  await page.evaluate(() => window.dispatchEvent(new Event("pagehide")));
+  await expect.poll(() => storedPage(page)).toBe(14);
+  await page.reload();
+  await expect(indicator(page)).toHaveText("15 / 40");
+});

@@ -26,7 +26,8 @@ export interface ReaderSessionOptions {
   zoom: number;
   /** 0-based index of the page at the top of the view. */
   onPageChange: (page: number) => void;
-  savePosition: (pos: ReadingPosition) => void;
+  /** Rejects if the write failed; the position is then saved again on the next flush. */
+  savePosition: (pos: ReadingPosition) => Promise<void>;
   onZoomStep: (direction: 1 | -1) => void;
 }
 
@@ -94,8 +95,14 @@ export function useReaderSession(opts: ReaderSessionOptions) {
       const pos = posRef.current;
       const prev = lastSaved.current;
       if (prev && prev.page === pos.page && prev.fraction === pos.fraction) return;
-      lastSaved.current = pos;
-      latest.current.savePosition(pos);
+      // Only a write that landed counts, so a failed one is retried by the next scroll or pagehide.
+      // The failure itself is reported by the caller.
+      latest.current.savePosition(pos).then(
+        () => {
+          lastSaved.current = pos;
+        },
+        () => {},
+      );
     };
     const onScroll = () => {
       const current = layoutRef.current;

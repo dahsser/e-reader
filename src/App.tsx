@@ -60,6 +60,7 @@ export default function App() {
   const [libraryVersion, setLibraryVersion] = useState(0);
   const [pending, setPending] = useState<PendingUpload | null>(null);
   const [persistNotice, setPersistNotice] = useState(false);
+  const positionSaveWarned = useRef(false);
 
   const showToast = useCallback((text: string) => setToast({ id: Date.now(), text }), []);
   const dismissToast = useCallback(() => setToast(null), []);
@@ -317,16 +318,22 @@ export default function App() {
   }, [book, zoomIn, zoomOut, changeZoom]);
 
   // Bound to its book: an unmounting Reader may flush after the next book is set.
+  // Rejects on failure so the Reader retries; the user is told once per session.
   const savePosition = useMemo(() => {
-    if (!book) return () => {};
+    if (!book) return async () => {};
     const { id } = book.meta;
     const pageCount = book.doc.numPages;
-    return (pos: ReadingPosition) => {
-      void getServices()
+    return (pos: ReadingPosition) =>
+      getServices()
         .then(({ library }) => library.savePosition(id, pos.page, pos.fraction, pageCount))
-        .catch((e) => console.warn("Saving the reading position failed", e));
-    };
-  }, [book]);
+        .catch((e: unknown) => {
+          if (!positionSaveWarned.current) {
+            positionSaveWarned.current = true;
+            showToast(`Couldn't save your reading position: ${errorText(e)}`);
+          }
+          throw e;
+        });
+  }, [book, showToast]);
 
   return (
     <div className="app">
