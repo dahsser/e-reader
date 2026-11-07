@@ -13,7 +13,13 @@ import { EmptyState } from "./ui/EmptyState";
 import { PersistNotice } from "./ui/PersistNotice";
 import { Toast } from "./ui/Toast";
 import { Toolbar } from "./ui/Toolbar";
-import { dismissPersistNotice, persistNoticeDue, uploadBook, uploadErrorMessage } from "./ui/upload";
+import {
+  assertOpensAsPdf,
+  dismissPersistNotice,
+  persistNoticeDue,
+  uploadBook,
+  uploadErrorMessage,
+} from "./ui/upload";
 
 interface OpenBook {
   /** Unique per open, so reopening remounts the Reader. */
@@ -174,12 +180,20 @@ export default function App() {
   const addAndOpen = useCallback(
     async (file: File): Promise<OpenResult | "not added"> => {
       try {
-        const meta = await uploadBook(file, await getServices(), { onPersistenceDenied: showPersistNotice });
-        setShelfOpen(false);
-        return await openBookById(meta.id);
+        const services = await getServices();
+        try {
+          const meta = await uploadBook(file, services, { onPersistenceDenied: showPersistNotice });
+          setShelfOpen(false);
+          return await openBookById(meta.id);
+        } catch (e) {
+          if (!(e instanceof LibraryFullError)) throw e;
+          // The size check runs before the file is parsed: only offer clean-up for a file we can add.
+          await assertOpensAsPdf(file, services.engine);
+          setPending({ file, neededBytes: e.neededBytes });
+          return "not added";
+        }
       } catch (e) {
-        if (e instanceof LibraryFullError) setPending({ file, neededBytes: e.neededBytes });
-        else showToast(uploadErrorMessage(e));
+        showToast(uploadErrorMessage(e));
         return "not added";
       } finally {
         libraryChanged();

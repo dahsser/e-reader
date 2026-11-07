@@ -81,6 +81,15 @@ export async function persistNoticeDue(): Promise<boolean> {
   return !(await storage.persisted());
 }
 
+/**
+ * Rejects (with PdfOpenError for an unreadable file) unless the engine can open the file.
+ * Used before asking the user to make room, so books are never removed for a file that can't be added.
+ */
+export async function assertOpensAsPdf(file: File, engine: Services["engine"]): Promise<void> {
+  const doc = await engine.open(new Uint8Array(await file.arrayBuffer()));
+  await doc.destroy();
+}
+
 /** User-facing message for a failed upload. */
 export function uploadErrorMessage(e: unknown): string {
   if (e instanceof PdfOpenError) return "Couldn't open this file as a PDF";

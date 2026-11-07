@@ -127,23 +127,40 @@ test("full shelf opens clean-up ordered least read first", async ({ page }) => {
   await expect(shelfBooks(page).nth(1)).toContainText("long.pdf");
 });
 
+/**
+ * Lets a test make the next book write to OPFS fail (as a quota/IO error would), so a
+ * clean-up retry fails *after* the selected books were removed.
+ */
+function allowWriteFailure(page: Page) {
+  return page.addInitScript(() => {
+    const original = FileSystemWritableFileStream.prototype.write;
+    FileSystemWritableFileStream.prototype.write = function (this: FileSystemWritableFileStream, ...args) {
+      if ((window as { __failBookWrites?: boolean }).__failBookWrites) {
+        return Promise.reject(new DOMException("Injected write failure", "QuotaExceededError"));
+      }
+      return original.apply(this, args);
+    } as typeof original;
+  });
+}
+const failNextWrites = (page: Page) => page.evaluate(() => ((window as { __failBookWrites?: boolean }).__failBookWrites = true));
+
 test("removing the open book opens the next one", async ({ page }) => {
+  await allowWriteFailure(page);
   await page.goto(tightCap());
   await uploadFirst(page, "long");
   await uploadFromShelf(page, "mixed"); // mixed is open; long is least read
 
-  // A pending upload that needs room but then fails to add, so no new book takes over.
   await openShelf(page);
-  await shelf(page)
-    .getByTestId("shelf-upload")
-    .setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(size("mixed"), 7) });
+  await shelf(page).getByTestId("shelf-upload").setInputFiles(fixture("scan"));
   await expect(cleanup(page)).toBeVisible();
   const mixedRow = cleanup(page).getByRole("checkbox").filter({ hasText: "mixed.pdf" });
   await mixedRow.click();
   await expect(cleanup(page).getByTestId("cleanup-status")).toHaveText("Enough space");
+  // The retry fails to store scan, so no new book takes over from the removed one.
+  await failNextWrites(page);
   await confirmButton(page).click();
 
-  await expect(page.getByRole("alert")).toContainText("Couldn't open this file as a PDF");
+  await expect(page.getByRole("alert")).toContainText("Couldn't save this book");
   await expectOpen(page, "long");
   await expect(cleanup(page)).toHaveCount(0);
   await openShelf(page);
@@ -152,20 +169,36 @@ test("removing the open book opens the next one", async ({ page }) => {
 });
 
 test("removing the only book shows the empty state", async ({ page }) => {
+  await allowWriteFailure(page);
   await page.goto(`/?capBytes=${size("long") + 1000}`);
   await uploadFirst(page, "long");
 
   await openShelf(page);
-  await shelf(page)
-    .getByTestId("shelf-upload")
-    .setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(size("long"), 7) });
+  await shelf(page).getByTestId("shelf-upload").setInputFiles(fixture("scan"));
   await cleanup(page).getByRole("checkbox").first().click();
+  await failNextWrites(page);
   await confirmButton(page).click();
 
-  await expect(page.getByRole("alert")).toContainText("Couldn't open this file as a PDF");
+  await expect(page.getByRole("alert")).toContainText("Couldn't save this book");
   await expect(page.getByTestId("upload-input")).toBeAttached();
   await expect(indicator(page)).toHaveCount(0);
   expect(await bookCount(page)).toBe(0);
+});
+
+test("a file that isn't a PDF never opens clean-up, even when the shelf is full", async ({ page }) => {
+  await page.goto(tightCap());
+  await uploadFirst(page, "long");
+  await uploadFromShelf(page, "mixed");
+
+  await openShelf(page);
+  await shelf(page)
+    .getByTestId("shelf-upload")
+    .setInputFiles({ name: "broken.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(size("mixed"), 7) });
+
+  await expect(page.getByRole("alert")).toContainText("Couldn't open this file as a PDF");
+  await expect(cleanup(page)).toHaveCount(0);
+  await expectOpen(page, "mixed");
+  expect(await bookCount(page)).toBe(2);
 });
 
 test("cancel leaves everything as it was", async ({ page }) => {
