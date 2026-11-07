@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  // Static-assets-only Worker: serves the Vite build. No server code; books never leave the browser.
+  "name": "ebook-reader",
+  "compatibility_date": "2026-11-07",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  },
+  "routes": [{ "pattern": "reader.dhs.pe", "custom_domain": true }]
+}
