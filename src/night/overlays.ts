@@ -1,0 +1,69 @@
+import type { NormRect } from "../engine/types";
+import { photoRects } from "./classify";
+
+export interface PixelRect { x: number; y: number; w: number; h: number }
+
+const clamp = (v: number, max: number) => Math.min(max, Math.max(0, v));
+/** Absorbs float noise (e.g. 0.3 * 50 = 15.000000000000002) so it doesn't add a pixel. */
+const EPS = 1e-6;
+
+/** Whole-pixel rect covering `r` (normalised 0..1) on a `width` × `height` canvas; null if empty. */
+export function toPixelRect(r: NormRect, width: number, height: number): PixelRect | null {
+  const x0 = clamp(Math.floor(r.x * width + EPS), width);
+  const y0 = clamp(Math.floor(r.y * height + EPS), height);
+  const x1 = clamp(Math.ceil((r.x + r.w) * width - EPS), width);
+  const y1 = clamp(Math.ceil((r.y + r.h) * height - EPS), height);
+  if (x1 <= x0 || y1 <= y0) return null;
+  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/**
+ * One `<canvas class="photo-overlay">` per image on `base` that the heuristic
+ * calls a photo, copied pixel-for-pixel from the (unfiltered) base render and
+ * positioned in % of the page box. Night CSS filters the base but only dims
+ * the overlays, so photos keep their true colours. Built regardless of the
+ * current theme so toggling is instant; day CSS hides them.
+ */
+export function createPhotoOverlays(base: HTMLCanvasElement, imageRects: NormRect[]): HTMLCanvasElement[] {
+  const { width, height } = base;
+  if (width === 0 || height === 0 || imageRects.length === 0) return [];
+  try {
+    const ctx = base.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return [];
+    const empty = new Uint8ClampedArray(0);
+    const photos = photoRects(imageRects, (r) => {
+      const p = toPixelRect(r, width, height);
+      return p ? ctx.getImageData(p.x, p.y, p.w, p.h).data : empty;
+    });
+    const overlays: HTMLCanvasElement[] = [];
+    for (const r of photos) {
+      const p = toPixelRect(r, width, height);
+      if (!p) continue;
+      const overlay = document.createElement("canvas");
+      overlay.className = "photo-overlay";
+      overlay.width = p.w;
+      overlay.height = p.h;
+      overlay.getContext("2d")?.drawImage(base, p.x, p.y, p.w, p.h, 0, 0, p.w, p.h);
+      Object.assign(overlay.style, {
+        left: `${(p.x / width) * 100}%`,
+        top: `${(p.y / height) * 100}%`,
+        width: `${(p.w / width) * 100}%`,
+        height: `${(p.h / height) * 100}%`,
+      });
+      overlays.push(overlay);
+    }
+    return overlays;
+  } catch (e) {
+    // Without overlays photos just get the page transform: degraded, not broken.
+    console.warn("Classifying page images failed", e);
+    return [];
+  }
+}
+
+/** Free overlay backing stores right away instead of waiting for GC. */
+export function releaseOverlays(overlays: HTMLCanvasElement[]): void {
+  for (const o of overlays) {
+    o.width = 0;
+    o.height = 0;
+  }
+}

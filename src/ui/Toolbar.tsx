@@ -7,8 +7,7 @@ export interface ToolbarProps {
   onZoomOut: () => void;
   /** Wired by the shelf (Task 8); the button is inert until then. */
   onShelf?: () => void;
-  /** Wired by night view (Task 7); the button is inert until then. */
-  onToggleNight?: () => void;
+  onToggleNight: () => void;
 }
 
 export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight }: ToolbarProps) {
@@ -33,7 +32,7 @@ export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onTog
         </>
       )}
       <span className="toolbar-spacer" />
-      <button type="button" aria-label="Night view" aria-pressed={night} disabled={!onToggleNight} onClick={onToggleNight}>
+      <button type="button" aria-label="Night view" aria-pressed={night} title="Night view (N)" onClick={onToggleNight}>
         ☾
       </button>
     </header>

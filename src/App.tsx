@@ -128,6 +128,27 @@ export default function App() {
   const zoomOut = useCallback(() => changeZoom((z) => z - ZOOM_STEP), [changeZoom]);
   const onZoomStep = useCallback((dir: 1 | -1) => (dir > 0 ? zoomIn() : zoomOut()), [zoomIn, zoomOut]);
 
+  const toggleNight = useCallback(() => {
+    const updated = { ...settingsRef.current, night: !settingsRef.current.night };
+    settingsRef.current = updated;
+    applyTheme(updated.night); // synchronously, so the whole UI flips in the same frame
+    setSettings(updated);
+    saveSettings(updated);
+  }, []);
+
+  // `n` toggles night view anywhere, except while typing or with modifiers held.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "n" || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      const t = e.target;
+      if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      e.preventDefault();
+      toggleNight();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [toggleNight]);
+
   // Ctrl/⌘ + = / + / - / 0 while reading.
   useEffect(() => {
     if (!book) return;
@@ -163,6 +184,7 @@ export default function App() {
         night={settings.night}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
+        onToggleNight={toggleNight}
       />
       {book ? (
         <Reader
