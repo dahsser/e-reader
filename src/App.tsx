@@ -76,6 +76,12 @@ export default function App() {
         let sizes: PageSize[];
         try {
           sizes = await doc.getPageSizes();
+          if (seq !== openSeq.current) {
+            void doc.destroy();
+            return "superseded";
+          }
+          // Only a book that actually opened (and is still wanted) counts as opened.
+          await library.markOpened(id);
         } catch (e) {
           void doc.destroy();
           throw e;
@@ -114,19 +120,13 @@ export default function App() {
     setReady(true);
   }, []);
 
-  /**
-   * Open the first book in shelf order that opens, skipping `tried`; the empty state if none does.
-   * `openBook` stamps a book as last-opened before the engine has parsed it, so a broken book
-   * would otherwise be retried first on every launch.
-   */
+  /** Open the first book in shelf order that opens, skipping `skipId` (already tried); the empty state if none does. */
   const openFirstAvailable = useCallback(
-    async (tried: Set<string>) => {
+    async (skipId: string | null = null) => {
       const { library } = await getServices();
       for (const b of await library.listBooks()) {
-        if (tried.has(b.id)) continue;
-        tried.add(b.id);
-        const result = await openBookById(b.id);
-        if (result !== "failed") return;
+        if (b.id === skipId) continue;
+        if ((await openBookById(b.id)) !== "failed") return;
       }
       closeBook();
     },
@@ -138,7 +138,7 @@ export default function App() {
     for (const doc of retiredDocs.current.splice(0)) void doc.destroy();
   }, [book]);
 
-  // Startup: reopen the last book, else show the empty state.
+  // Startup: reopen the last book, else the first on the shelf that opens, else show the empty state.
   useEffect(() => {
     applyTheme(settingsRef.current.night);
     let cancelled = false;
@@ -147,8 +147,8 @@ export default function App() {
         const { library } = await getServices();
         const id = await library.getLastBookId();
         if (cancelled) return;
-        if (!id) setReady(true);
-        else if ((await openBookById(id)) === "failed" && !cancelled) await openFirstAvailable(new Set([id]));
+        if (!id) await openFirstAvailable();
+        else if ((await openBookById(id)) === "failed" && !cancelled) await openFirstAvailable(id);
       } catch (e) {
         if (cancelled) return;
         showToast(`Couldn't load the library: ${errorText(e)}`);
@@ -231,7 +231,7 @@ export default function App() {
           // Removal may have stopped part-way, after the open book was already gone.
           const openId = bookRef.current?.meta.id;
           if (removedOpenBook && openId && !(await library.listBooks()).some((b) => b.id === openId)) {
-            await openFirstAvailable(new Set());
+            await openFirstAvailable();
           }
           return;
         } finally {
@@ -240,7 +240,7 @@ export default function App() {
         const result = await addAndOpen(file);
         // The removed book is still on screen unless something else opened.
         if (removedOpenBook && (result === "failed" || result === "not added")) {
-          await openFirstAvailable(new Set());
+          await openFirstAvailable();
         }
       } finally {
         setBusy(false);

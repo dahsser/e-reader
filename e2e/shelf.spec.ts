@@ -232,18 +232,22 @@ test("cancel leaves everything as it was", async ({ page }) => {
   expect(await bookCount(page)).toBe(2);
 });
 
+/** Overwrite a stored book's bytes in OPFS so it no longer opens. */
+function corruptStoredBook(page: Page, name: Name) {
+  return page.evaluate(async (id) => {
+    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("books");
+    const writable = await (await dir.getFileHandle(id)).createWritable();
+    await writable.write(new TextEncoder().encode("not a pdf any more"));
+    await writable.close();
+  }, sha256(name));
+}
+
 test("a book that fails to open falls back to the next one and stays on the shelf", async ({ page }) => {
   await page.goto("/");
   await uploadFirst(page, "long");
   await uploadFromShelf(page, "mixed"); // mixed becomes the startup book
 
-  // Corrupt mixed's stored bytes.
-  await page.evaluate(async (id) => {
-    const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle("books");
-    const writable = await (await dir.getFileHandle(id)).createWritable();
-    await writable.write(new TextEncoder().encode("not a pdf any more"));
-    await writable.close();
-  }, sha256("mixed"));
+  await corruptStoredBook(page, "mixed");
 
   await page.reload();
   await expect(page.getByRole("alert")).toContainText("Couldn't open this book");
@@ -254,6 +258,27 @@ test("a book that fails to open falls back to the next one and stays on the shel
 
   await page.reload();
   await expectOpen(page, "long");
+});
+
+test("a book that fails to open from the shelf isn't marked as opened", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "mixed");
+  await uploadFromShelf(page, "long"); // shelf order: long, mixed
+  await corruptStoredBook(page, "mixed");
+
+  await openShelf(page);
+  await shelfBooks(page).filter({ hasText: "mixed.pdf" }).click();
+  await expect(page.getByRole("alert")).toContainText("Couldn't open this book");
+  await expectOpen(page, "long");
+
+  // mixed didn't rise to the top, and long is still the book to reopen.
+  await openShelf(page);
+  await expect(shelfBooks(page).nth(0)).toContainText("long.pdf");
+  await expect(shelfBooks(page).nth(1)).toContainText("mixed.pdf");
+  await page.reload();
+  await expectOpen(page, "long");
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("alert")).toHaveCount(0);
 });
 
 test("dialogs use the night theme, not white", async ({ page }) => {

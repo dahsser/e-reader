@@ -112,14 +112,9 @@ test("rejects a non-PDF upload", async ({ page }) => {
   expect(await bookCount(page)).toBe(0);
 });
 
-test("re-uploading the same file opens it instead of duplicating", async ({ page }) => {
-  await openLong(page);
-  await scrollToPage(page, 9);
-  await expect(indicator(page)).toHaveText("10 / 40");
-  await page.waitForTimeout(600);
-
-  // Forget the last-open book so the app starts in the empty state while the book stays stored.
-  await page.evaluate(
+/** Forget the last-open book (the kv entry startup reads), leaving the shelf as it is. */
+function clearLastBookId(page: Page): Promise<void> {
+  return page.evaluate(
     () =>
       new Promise<void>((resolve, reject) => {
         const req = indexedDB.open("pdf-reader");
@@ -136,10 +131,32 @@ test("re-uploading the same file opens it instead of duplicating", async ({ page
         };
       }),
   );
-  await page.reload();
-  await expect(uploadInput(page)).toBeAttached();
+}
 
-  await uploadInput(page).setInputFiles(fixture("long"));
+test("re-uploading the same file opens it instead of duplicating", async ({ page }) => {
+  await openLong(page);
+  await scrollToPage(page, 9);
   await expect(indicator(page)).toHaveText("10 / 40");
-  expect(await bookCount(page)).toBe(1);
+  await page.waitForTimeout(600);
+
+  // Switch to another book, then upload long again.
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  await page.getByTestId("shelf-upload").setInputFiles(fixture("mixed"));
+  await expect(indicator(page)).toHaveText("1 / 4");
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  await page.getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await expect(indicator(page)).toHaveText("10 / 40");
+  expect(await bookCount(page)).toBe(2);
+});
+
+test("with no last book recorded, startup opens the shelf's first book instead of the empty state", async ({ page }) => {
+  await openLong(page);
+  await scrollToPage(page, 9);
+  await expect(indicator(page)).toHaveText("10 / 40");
+  await page.waitForTimeout(600);
+
+  await clearLastBookId(page);
+  await page.reload();
+  await expect(indicator(page)).toHaveText("10 / 40");
+  await expect(uploadInput(page)).toHaveCount(0);
 });

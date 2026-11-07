@@ -46,6 +46,24 @@ describe("Library", () => {
     expect(await lib.listBooks()).toHaveLength(1);
   });
 
+  test("duplicate upload restores missing book data", async () => {
+    const { lib, blobs } = await setup();
+    const { book } = await lib.addBook(pdf("a.pdf", [1, 2, 3]), describeOk());
+    await blobs.delete(book.id);
+    await expect(lib.openBook(book.id)).rejects.toThrow("Book data missing");
+
+    let described = false;
+    const again = await lib.addBook(pdf("a.pdf", [1, 2, 3]), async () => {
+      described = true;
+      throw new Error("not needed");
+    });
+    expect(again.duplicate).toBe(true);
+    expect(again.book.id).toBe(book.id);
+    expect(described).toBe(false);
+    expect(Array.from((await blobs.get(book.id))!)).toEqual([1, 2, 3]);
+    expect(Array.from((await lib.openBook(book.id)).bytes)).toEqual([1, 2, 3]);
+  });
+
   test("throws LibraryFullError with the exact shortfall", async () => {
     const { lib, blobs } = await setup(100);
     await lib.addBook(pdf("a.pdf", 70), describeOk());
@@ -81,23 +99,31 @@ describe("Library", () => {
     expect(await blobs.get("anything")).toBeNull();
   });
 
-  test("openBook stamps lastOpenedAt and lastBookId", async () => {
-    const { lib, clock } = await setup();
+  test("openBook reads the book without marking it opened", async () => {
+    const { lib } = await setup();
     const { book } = await lib.addBook(pdf("a.pdf", [1, 2, 3]), describeOk());
-    expect(await lib.getLastBookId()).toBeNull();
-    clock.set(5000);
     const opened = await lib.openBook(book.id);
-    expect(opened.book.lastOpenedAt).toBe(5000);
+    expect(opened.book.lastOpenedAt).toBeNull();
     expect(Array.from(opened.bytes)).toEqual([1, 2, 3]);
     expect(opened.position).toBeNull();
+    expect(await lib.getLastBookId()).toBeNull();
+    expect((await lib.listBooks())[0].lastOpenedAt).toBeNull();
+  });
+
+  test("markOpened stamps lastOpenedAt and lastBookId", async () => {
+    const { lib, clock } = await setup();
+    const { book } = await lib.addBook(pdf("a.pdf", [1, 2, 3]), describeOk());
+    clock.set(5000);
+    await lib.markOpened(book.id);
     expect(await lib.getLastBookId()).toBe(book.id);
     expect((await lib.listBooks())[0].lastOpenedAt).toBe(5000);
+    expect((await lib.openBook(book.id)).book.lastOpenedAt).toBe(5000);
   });
 
   test("removeBooks keeps positions and clears lastBookId", async () => {
     const { lib } = await setup();
     const { book } = await lib.addBook(pdf("a.pdf", [1, 2, 3]), describeOk());
-    await lib.openBook(book.id);
+    await lib.markOpened(book.id);
     await lib.savePosition(book.id, 3, 0.5, 10);
     await lib.removeBooks([book.id]);
     expect(await lib.listBooks()).toEqual([]);
@@ -119,9 +145,9 @@ describe("Library", () => {
   test("listBooks: most recently opened first, never-opened after (newest added first)", async () => {
     const { lib, clock, ids } = await three();
     clock.set(1000);
-    await lib.openBook(ids[0]);
+    await lib.markOpened(ids[0]);
     clock.set(2000);
-    await lib.openBook(ids[1]);
+    await lib.markOpened(ids[1]);
     // c never opened; add d never opened, newer
     clock.set(400);
     const d = (await lib.addBook(pdf("d.pdf", [9]), describeOk("d"))).book.id;
@@ -131,12 +157,23 @@ describe("Library", () => {
   test("cleanupCandidates: never-opened (oldest added) first, then oldest lastOpenedAt", async () => {
     const { lib, clock, ids } = await three();
     clock.set(3000);
-    await lib.openBook(ids[0]);
+    await lib.markOpened(ids[0]);
     clock.set(2000);
-    await lib.openBook(ids[1]);
+    await lib.markOpened(ids[1]);
     clock.set(400);
     const d = (await lib.addBook(pdf("d.pdf", [9]), describeOk("d"))).book.id;
     expect((await lib.cleanupCandidates()).map((b) => b.id)).toEqual([ids[2], d, ids[1], ids[0]]);
+  });
+
+  test("reading a book that then fails to open leaves it least read", async () => {
+    const { lib, clock, ids } = await three();
+    clock.set(3000);
+    await lib.markOpened(ids[0]);
+    clock.set(4000);
+    await lib.openBook(ids[2]); // read, but the engine never opens it, so it isn't marked
+    expect((await lib.cleanupCandidates()).map((b) => b.id)).toEqual([ids[1], ids[2], ids[0]]);
+    expect((await lib.listBooks()).map((b) => b.id)).toEqual([ids[0], ids[2], ids[1]]);
+    expect(await lib.getLastBookId()).toBe(ids[0]);
   });
 
   test("progressOf", () => {

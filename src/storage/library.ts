@@ -37,7 +37,11 @@ export class Library {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const id = await sha256Hex(bytes);
     const existing = await this.db.getBook(id);
-    if (existing) return { book: existing, duplicate: true };
+    if (existing) {
+      // Self-heal a book whose bytes went missing: the upload has them again.
+      if (!(await this.blobs.get(id))) await this.blobs.put(id, bytes);
+      return { book: existing, duplicate: true };
+    }
 
     const { usedBytes } = await this.usage();
     if (usedBytes + bytes.byteLength > this.capBytes) {
@@ -65,15 +69,21 @@ export class Library {
     }
   }
 
+  /** Reads a book for opening. Doesn't mark it opened: call `markOpened` once it actually opened. */
   async openBook(id: string): Promise<{ book: BookMeta; bytes: Uint8Array; position: Position | null }> {
-    const meta = await this.db.getBook(id);
-    if (!meta) throw new Error(`Book not found: ${id}`);
+    const book = await this.db.getBook(id);
+    if (!book) throw new Error(`Book not found: ${id}`);
     const bytes = await this.blobs.get(id);
     if (!bytes) throw new Error(`Book data missing: ${id}`);
-    const book = { ...meta, lastOpenedAt: this.now() };
-    await this.db.putBook(book);
-    await this.db.setLastBookId(id);
     return { book, bytes, position: (await this.db.getPosition(id)) ?? null };
+  }
+
+  /** Stamps the book as most recently opened and as the one to reopen on launch. */
+  async markOpened(id: string): Promise<void> {
+    const meta = await this.db.getBook(id);
+    if (!meta) throw new Error(`Book not found: ${id}`);
+    await this.db.putBook({ ...meta, lastOpenedAt: this.now() });
+    await this.db.setLastBookId(id);
   }
 
   async savePosition(bookId: string, page: number, fraction: number, pageCount: number): Promise<void> {
