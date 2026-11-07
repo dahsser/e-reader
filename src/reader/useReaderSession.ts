@@ -71,13 +71,15 @@ export function useReaderSession(opts: ReaderSessionOptions) {
   }, []);
 
   // New layout (open, zoom, resize): restore the reading position, drop canvases.
+  // Waits for `queue` too: the page content only mounts once both exist, and
+  // restoring against an empty container would clamp scrollTop to 0.
   useLayoutEffect(() => {
     const el = mainRef.current;
-    if (!layout || !el) return;
+    if (!layout || !queue || !el) return;
     layoutRef.current = layout;
     el.scrollTop = scrollTopFor(posRef.current, layout.boxes);
     latest.current.onPageChange(positionAt(el.scrollTop + INDICATOR_SLACK, layout.boxes).page);
-  }, [layout]);
+  }, [layout, queue]);
 
   useLayoutEffect(() => {
     if (queue && layout) queue.setLayout(layout.boxes);
