@@ -86,6 +86,54 @@ test("zoom keeps the reading position", async ({ page }) => {
   expect(box.y + box.height).toBeGreaterThan(main.y);
 });
 
+test("pinch / Ctrl+wheel zooms smoothly around the pointer without blanking pages", async ({ page }) => {
+  await openLong(page);
+  await scrollToPage(page, 9);
+  await expect.poll(() => canvasWidth(page, 9)).toBeGreaterThan(0);
+  const renderedWidth = await canvasWidth(page, 9);
+  const before = (await pageWrapper(page, 9).boundingBox())!;
+  // A point inside page 10, off-centre. (Horizontally the anchor only holds as far as the
+  // scroll range allows: at 128% the page is barely wider than the view.)
+  const px = before.x + before.width * 0.45;
+  const py = before.y + 120;
+  const fx = (px - before.x) / before.width;
+  const fy = (py - before.y) / before.height;
+
+  await page.mouse.move(px, py);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -5); // trackpad-pinch-sized deltas
+  await page.keyboard.up("Control");
+
+  // Continuous: exp(0.25) ≈ 128%, not a 10% step.
+  await expect(page.locator(".zoom-level")).toHaveText("128%");
+  // The old canvas is kept (stretched) while the sharp one renders.
+  expect(await canvasWidth(page, 9)).toBeGreaterThan(0);
+  const after = (await pageWrapper(page, 9).boundingBox())!;
+  expect(after.width).toBeCloseTo(before.width * 1.28, 0);
+  // The content point stays under the pointer.
+  expect(after.x + fx * after.width).toBeCloseTo(px, 0);
+  expect(after.y + fy * after.height).toBeCloseTo(py, 0);
+  // Once the gesture settles the page is re-rendered sharp.
+  await expect.poll(() => canvasWidth(page, 9)).toBeGreaterThan(renderedWidth * 1.2);
+});
+
+test("zoom buttons step to the next 10% mark after a pinch", async ({ page }) => {
+  await openLong(page);
+  await page.mouse.move(300, 300);
+  await page.keyboard.down("Control");
+  for (let i = 0; i < 2; i++) await page.mouse.wheel(0, -5);
+  await page.keyboard.up("Control");
+  await expect(page.locator(".zoom-level")).toHaveText("111%"); // exp(0.1)
+  await page.keyboard.down("Control");
+  await page.mouse.wheel(0, -3);
+  await page.keyboard.up("Control");
+  await expect(page.locator(".zoom-level")).toHaveText("114%");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await expect(page.locator(".zoom-level")).toHaveText("120%");
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  await expect(page.locator(".zoom-level")).toHaveText("110%");
+});
+
 test("visible pages get rendered canvases", async ({ page }) => {
   await openLong(page);
   await expect.poll(() => canvasWidth(page, 0)).toBeGreaterThan(0);

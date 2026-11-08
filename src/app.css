@@ -32,7 +32,8 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app-bg
 }
 
 /* Reader: the single scroll container. Always reserve the scrollbar so the width never flips. */
-.reader { flex: 1; min-height: 0; overflow: auto; overflow-y: scroll; background: var(--app-bg); }
+/* overflow-anchor: none — the reader places scrollTop itself on every relayout (zoom anchor, resume). */
+.reader { flex: 1; min-height: 0; overflow: auto; overflow-y: scroll; overflow-anchor: none; background: var(--app-bg); }
 .reader:focus { outline: none; }
 .reader-content { position: relative; }
 .page {

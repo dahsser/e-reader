@@ -2,6 +2,11 @@ import type { NormRect, PageSize, PdfDoc } from "../engine/types";
 import { renderScale, type PageBox } from "./layout";
 import { pickNextPage } from "./scheduler";
 
+function releaseCanvas(canvas: HTMLCanvasElement): void {
+  canvas.width = 0;
+  canvas.height = 0;
+}
+
 export interface RenderedPage {
   canvas: HTMLCanvasElement;
   imageRects: NormRect[];
@@ -16,7 +21,9 @@ interface InFlight {
  * Renders pages of one document one at a time into detached canvases.
  * Callers feed it which pages are wanted (prefetch zone) and visible; it
  * picks the next page with `pickNextPage`, aborts the in-flight render when
- * its page leaves the zone, and evicts canvases of pages that leave.
+ * its page leaves the zone, and evicts canvases of pages that leave. On a new
+ * layout, rendered pages go stale: they stay on screen (stretched by CSS) and
+ * are swapped for a sharp render when it lands, so zooming never blanks a page.
  * Framework-free so it can be unit-tested and driven from a React hook.
  */
 export class RenderQueue {
@@ -24,6 +31,8 @@ export class RenderQueue {
   private want = new Set<number>();
   private visible = new Set<number>();
   private rendered = new Map<number, RenderedPage>();
+  /** Rendered at an old layout: still shown, waiting for a re-render. */
+  private stale = new Set<number>();
   private failed = new Set<number>();
   private listeners = new Map<number, Set<() => void>>();
   private inflight: InFlight | null = null;
@@ -37,12 +46,12 @@ export class RenderQueue {
     private dpr: () => number = () => window.devicePixelRatio || 1,
   ) {}
 
-  /** New geometry (zoom/resize): abort, drop all canvases, re-render wanted pages. */
+  /** New geometry (zoom/resize): abort, re-render wanted pages, keeping the old canvases meanwhile. */
   setLayout(boxes: PageBox[]): void {
     this.boxes = boxes;
     this.inflight?.controller.abort();
     this.failed.clear();
-    for (const i of [...this.rendered.keys()]) this.evict(i);
+    this.stale = new Set(this.rendered.keys());
     this.schedulePump();
   }
 
@@ -95,9 +104,9 @@ export class RenderQueue {
     const page = this.rendered.get(index);
     if (!page) return;
     this.rendered.delete(index);
+    this.stale.delete(index);
     // Release the backing store right away instead of waiting for GC.
-    page.canvas.width = 0;
-    page.canvas.height = 0;
+    releaseCanvas(page.canvas);
     this.notify(index);
   }
 
@@ -114,6 +123,7 @@ export class RenderQueue {
   private pump(): void {
     if (this.disposed || this.inflight || this.boxes.length === 0) return;
     const done = new Set([...this.rendered.keys(), ...this.failed]);
+    for (const i of this.stale) done.delete(i);
     const index = pickNextPage(this.want, done, this.visible, (i) => Math.abs(i - this.focus));
     if (index === -1) return;
 
@@ -129,16 +139,19 @@ export class RenderQueue {
       .then(
         (result) => {
           if (this.disposed || controller.signal.aborted || !this.want.has(index)) {
-            canvas.width = 0;
-            canvas.height = 0;
+            releaseCanvas(canvas);
             return;
           }
+          const old = this.rendered.get(index);
+          this.stale.delete(index);
           this.rendered.set(index, { canvas, imageRects: result.imageRects });
           this.notify(index);
+          // Subscribers swap synchronously-ish (React commits store updates in a microtask);
+          // release the replaced canvas only after that, or the page would flash blank.
+          if (old) setTimeout(() => releaseCanvas(old.canvas), 0);
         },
         (e: unknown) => {
-          canvas.width = 0;
-          canvas.height = 0;
+          releaseCanvas(canvas);
           if (this.disposed || controller.signal.aborted || (e as Error)?.name === "AbortError") return;
           this.failed.add(index);
           console.warn(`Rendering page ${index + 1} failed`, e);

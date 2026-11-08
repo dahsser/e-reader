@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { clampZoom, loadSettings, saveSettings } from "./settings";
+import { clampZoom, loadSettings, saveSettings, stepZoom } from "./settings";
 
 const KEY = "reader.settings";
 
@@ -71,11 +71,23 @@ describe("settings", () => {
     vi.restoreAllMocks();
   });
 
-  test("clampZoom", () => {
+  test("clampZoom keeps 1% resolution for smooth pinch zoom", () => {
     expect(clampZoom(3.4)).toBe(3);
-    expect(clampZoom(0.94)).toBe(0.9);
+    expect(clampZoom(0.94)).toBe(0.94);
     expect(clampZoom(0.1)).toBe(0.5);
-    expect(clampZoom(1.25)).toBe(1.3);
+    expect(clampZoom(1.234)).toBe(1.23);
+    expect(clampZoom(1.0000000002)).toBe(1);
     expect(clampZoom(NaN)).toBe(1);
+  });
+
+  test("stepZoom moves to the next 10% mark", () => {
+    expect(stepZoom(1, 1)).toBe(1.1);
+    expect(stepZoom(1, -1)).toBe(0.9);
+    expect(stepZoom(1.23, 1)).toBe(1.3);
+    expect(stepZoom(1.23, -1)).toBe(1.2);
+    expect(stepZoom(1.2 + 1e-12, -1)).toBe(1.1);
+    expect(stepZoom(0.7 + 0.1 + 0.1, 1)).toBe(1); // 0.8999999999999999
+    expect(stepZoom(3, 1)).toBe(3);
+    expect(stepZoom(0.5, -1)).toBe(0.5);
   });
 });

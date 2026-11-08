@@ -86,17 +86,48 @@ describe("RenderQueue", () => {
     expect(onChange).toHaveBeenCalledTimes(2);
   });
 
-  it("drops canvases and re-renders wanted pages on relayout", async () => {
+  it("keeps the old canvas on relayout until the re-render lands, then swaps and releases it", async () => {
+    const { q, calls } = setup();
+    const onChange = vi.fn();
+    q.subscribe(5, onChange);
+    q.setWanted(5, true);
+    await flush();
+    calls[0].resolve({ imageRects: [] });
+    await flush();
+    const old = q.get(5)!;
+    old.canvas.width = 10;
+    q.setLayout(boxes.map((b) => ({ ...b, width: b.width * 2 })));
+    expect(q.get(5)).toBe(old); // still shown (stretched) while re-rendering
+    await flush();
+    expect(calls.map((c) => c.index)).toEqual([5, 5]);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    calls[1].resolve({ imageRects: [{ x: 0, y: 0, w: 1, h: 1 }] });
+    await flush();
+    expect(q.get(5)).not.toBe(old);
+    expect(q.get(5)!.imageRects).toHaveLength(1);
+    expect(onChange).toHaveBeenCalledTimes(2);
+    await flush();
+    expect(old.canvas.width).toBe(0);
+    expect(calls).toHaveLength(2); // the fresh render is not stale
+  });
+
+  it("relayout while a stale page re-renders restarts it; leaving the zone evicts it", async () => {
     const { q, calls } = setup();
     q.setWanted(5, true);
     await flush();
     calls[0].resolve({ imageRects: [] });
     await flush();
-    expect(q.get(5)).toBeDefined();
     q.setLayout(boxes.map((b) => ({ ...b, width: b.width * 2 })));
-    expect(q.get(5)).toBeUndefined();
     await flush();
-    expect(calls.map((c) => c.index)).toEqual([5, 5]);
+    q.setLayout(boxes.map((b) => ({ ...b, width: b.width * 3 })));
+    expect(calls[1].signal.aborted).toBe(true);
+    await flush();
+    expect(calls.map((c) => c.index)).toEqual([5, 5, 5]);
+    const old = q.get(5)!;
+    q.setWanted(5, false);
+    expect(calls[2].signal.aborted).toBe(true);
+    expect(q.get(5)).toBeUndefined();
+    expect(old.canvas.width).toBe(0);
   });
 
   it("swallows aborts and discards results after dispose", async () => {
