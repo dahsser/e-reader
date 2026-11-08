@@ -430,3 +430,15 @@ test("no persistence notice when storage is persisted", async ({ page }) => {
   await page.waitForTimeout(300);
   await expect(page.getByText(PERSIST_NOTICE)).toHaveCount(0);
 });
+
+test("a toast over the open shelf can be dismissed and leaves the panel open", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await openShelf(page);
+  await shelf(page).getByTestId("shelf-upload").setInputFiles({ name: "x.pdf", mimeType: "application/pdf", buffer: Buffer.from("hello") });
+  const toast = page.getByRole("alert");
+  await expect(toast).toContainText("Couldn't open this file as a PDF");
+  await toast.getByRole("button", { name: "Dismiss" }).click({ timeout: 3000 });
+  await expect(toast).toHaveCount(0);
+  await expect(shelf(page)).toBeVisible();
+});

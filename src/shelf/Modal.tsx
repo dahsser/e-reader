@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 // Open modals, oldest first. Escape closes only the topmost one, wherever focus is.
-const stack: Array<{ close: () => void }> = [];
+const stack: Array<{ close: () => void; focus: () => void }> = [];
 
 function onKeyDown(e: KeyboardEvent) {
   if (e.key !== "Escape" || stack.length === 0) return;
@@ -28,14 +28,16 @@ export function Modal({ label, onClose, className, variant = "dialog", children 
   const [previous] = useState(() => document.activeElement);
 
   useEffect(() => {
-    const entry = { close: () => closeRef.current() };
+    const entry = { close: () => closeRef.current(), focus: () => ref.current?.focus() };
     stack.push(entry);
     if (stack.length === 1) window.addEventListener("keydown", onKeyDown);
     ref.current?.focus();
     return () => {
       stack.splice(stack.indexOf(entry), 1);
       if (stack.length === 0) window.removeEventListener("keydown", onKeyDown);
-      if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body) previous.focus();
+      // Another modal still open beneath (e.g. the drawer under "Make room"): focus stays in it.
+      if (stack.length > 0) stack[stack.length - 1].focus();
+      else if (previous instanceof HTMLElement && previous.isConnected && previous !== document.body) previous.focus();
     };
   }, [previous]);
 

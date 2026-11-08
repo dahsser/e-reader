@@ -52,6 +52,9 @@ export default function App() {
   const bookRef = useRef<OpenBook | null>(null);
   const retiredDocs = useRef<PdfDoc[]>([]);
   const openSeq = useRef(0);
+  /** Id of the open in flight (set at its start, cleared when that open finishes). */
+  const openingId = useRef<{ seq: number; id: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [jump, setJump] = useState<JumpRequest | null>(null);
   const jumpSeq = useRef(0);
@@ -72,6 +75,7 @@ export default function App() {
   const openBookById = useCallback(
     async (id: string): Promise<OpenResult> => {
       const seq = ++openSeq.current;
+      openingId.current = { seq, id };
       try {
         const { engine, library } = await getServices();
         const { book: meta, bytes, position } = await library.openBook(id);
@@ -107,6 +111,7 @@ export default function App() {
         showToast(`Couldn't open this book: ${errorText(e)}`);
         return "failed";
       } finally {
+        if (openingId.current?.seq === seq) openingId.current = null;
         if (seq === openSeq.current) setReady(true);
         libraryChanged(); // lastOpenedAt moved
       }
@@ -262,7 +267,13 @@ export default function App() {
   const onDeleteBook = useCallback(
     async (id: string) => {
       const wasOpen = bookRef.current?.meta.id === id;
+      // A book still opening is dropped like the open one: cancel that open, then fall back.
+      const wasOpening = openingId.current?.id === id;
+      if (wasOpening) ++openSeq.current;
+      const seqBefore = openSeq.current;
+      const fallback = wasOpen || wasOpening;
       setBusy(true);
+      setDeletingId(id);
       try {
         const { library } = await getServices();
         try {
@@ -270,14 +281,18 @@ export default function App() {
         } catch (e) {
           showToast(`Couldn't delete the book: ${errorText(e)}`);
           // Removal may have gone through before failing.
-          if (wasOpen && !(await library.listBooks()).some((b) => b.id === id)) await openFirstAvailable();
+          if (fallback && openSeq.current === seqBefore && !(await library.listBooks()).some((b) => b.id === id)) {
+            await openFirstAvailable();
+          }
           return;
         }
-        if (wasOpen) await openFirstAvailable();
+        // Skip the fallback if the user opened or closed something meanwhile.
+        if (fallback && openSeq.current === seqBefore) await openFirstAvailable();
       } catch (e) {
         showToast(`Couldn't delete the book: ${errorText(e)}`);
       } finally {
         libraryChanged();
+        setDeletingId(null);
         setBusy(false);
       }
     },
@@ -416,6 +431,7 @@ export default function App() {
           version={libraryVersion}
           currentId={book?.meta.id ?? null}
           busy={busy}
+          deleting={deletingId !== null}
           onOpenBook={onShelfOpenBook}
           onFile={onFile}
           onDeleteBook={onDeleteBook}

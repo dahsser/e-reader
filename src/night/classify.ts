@@ -20,9 +20,19 @@ export function lightShare(rgba: Uint8ClampedArray, step = 4): number {
   return sampled === 0 ? 0 : light / sampled;
 }
 
-/** Summed image area (overlap ignored) covers the page: a scan, whole or tiled in strips. */
+const STRIP_SPAN = 0.9;
+
+/**
+ * A scan: one image covers the page, or the page is tiled in full-width
+ * (or full-height) strips whose summed area covers it. A big photo plus a
+ * small one, or two stacked partial images, is not a scan.
+ */
 export function isFullPageScan(rects: NormRect[]): boolean {
-  return rects.reduce((sum, r) => sum + r.w * r.h, 0) >= FULL_PAGE_SCAN_AREA;
+  if (rects.length === 0) return false;
+  if (rects.some((r) => r.w * r.h >= FULL_PAGE_SCAN_AREA)) return true;
+  const total = rects.reduce((sum, r) => sum + r.w * r.h, 0);
+  if (total < FULL_PAGE_SCAN_AREA) return false;
+  return rects.every((r) => r.w >= STRIP_SPAN) || rects.every((r) => r.h >= STRIP_SPAN);
 }
 
 /**

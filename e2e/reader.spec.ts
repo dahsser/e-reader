@@ -296,7 +296,33 @@ test("zoom after a jump keeps the place", async ({ page }) => {
   await openLong(page);
   await goTo(page, "25");
   await expect(indicator(page)).toHaveText("25 / 40");
+  await scrollToPage(page, 27);
+  await expect(indicator(page)).toHaveText("28 / 40");
   await page.getByRole("button", { name: "Zoom in" }).click();
   await page.waitForTimeout(300);
+  await expect(indicator(page)).toHaveText("28 / 40");
+});
+
+test("a jump doesn't leak into the next book opened", async ({ page }) => {
+  await page.goto("/");
+  await uploadInput(page).setInputFiles(fixture("mixed"));
+  await expect(indicator(page)).toHaveText("1 / 4");
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Shelf" });
+  await shelf.getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await expect(indicator(page)).toHaveText("1 / 40");
+  await page.keyboard.press("Escape");
+  await goTo(page, "25");
   await expect(indicator(page)).toHaveText("25 / 40");
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  await shelf.getByTestId("shelf-book").filter({ hasText: "mixed" }).click();
+  await expect(indicator(page)).toHaveText("1 / 4");
+});
+
+test("keyboard scrolling works right after a jump", async ({ page }) => {
+  await openLong(page);
+  await goTo(page, "10");
+  await expect(indicator(page)).toHaveText("10 / 40");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("PageDown"); // a page is taller than one screen
+  await expect.poll(async () => Number((await indicator(page).innerText()).split(" / ")[0])).toBeGreaterThan(10);
 });

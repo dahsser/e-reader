@@ -43,13 +43,15 @@ export interface ShelfProps {
   version: number;
   currentId: string | null;
   busy: boolean;
+  /** The busy work is a delete (the Add button then isn't "Adding…"). */
+  deleting?: boolean;
   onOpenBook: (id: string) => void;
   onFile: (file: File) => void;
   onDeleteBook: (id: string) => void;
   onClose: () => void;
 }
 
-export function Shelf({ version, currentId, busy, onOpenBook, onFile, onDeleteBook, onClose }: ShelfProps) {
+export function Shelf({ version, currentId, busy, deleting = false, onOpenBook, onFile, onDeleteBook, onClose }: ShelfProps) {
   const [data, setData] = useState<ShelfData | null>(null);
   const [error, setError] = useState<string | null>(null);
   /** The one row asking "Delete this book?". */
@@ -90,7 +92,7 @@ export function Shelf({ version, currentId, busy, onOpenBook, onFile, onDeleteBo
         </button>
       </div>
       <label className="button-primary shelf-add" aria-disabled={busy}>
-        {busy ? "Adding…" : "Add PDF"}
+        {busy && !deleting ? "Adding…" : "Add PDF"}
         <input
           type="file"
           data-testid="shelf-upload"

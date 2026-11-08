@@ -100,6 +100,7 @@ export function useReaderSession(opts: ReaderSessionOptions) {
     handledJump.current = jump.id;
     const page = Math.min(Math.max(jump.page, 0), sizes.length - 1);
     el.scrollTop = scrollTopFor({ page, fraction: 0 }, layout.boxes);
+    el.focus({ preventScroll: true }); // so PageDown/arrow keys scroll the reader
     // Read back: near the end scrollTop clamps, and then no scroll event may fire.
     posRef.current = positionAt(el.scrollTop, layout.boxes);
   }, [jump, layout, queue, sizes]);
