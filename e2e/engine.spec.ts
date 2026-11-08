@@ -30,6 +30,22 @@ test("opens mixed.pdf, reports sizes, title fallback and image rects", async ({ 
   expect(result.thumbSize).toBeGreaterThan(0);
 });
 
+// pdf.js records image positions only on a page's first render and caches them on the page.
+test("re-rendering a page (zoom, scroll back) still reports its image rects", async ({ page }) => {
+  await page.goto("/");
+  await page.waitForFunction(() => "__engine" in window);
+  const rects = await page.evaluate(async (bytes) => {
+    const doc = await window.__engine.open(new Uint8Array(bytes));
+    const first = await doc.renderPage(1, document.createElement("canvas"), 1);
+    const again = await doc.renderPage(1, document.createElement("canvas"), 2);
+    await doc.destroy();
+    return [first.imageRects, again.imageRects];
+  }, mixed());
+  expect(rects[0]).toHaveLength(1);
+  expect(rects[1]).toHaveLength(1);
+  expect(rects[1][0].x).toBeCloseTo(rects[0][0].x, 3);
+});
+
 test("rejects garbage bytes with PdfOpenError", async ({ page }) => {
   await page.goto("/");
   await page.waitForFunction(() => "__engine" in window);
