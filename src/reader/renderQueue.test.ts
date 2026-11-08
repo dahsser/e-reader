@@ -111,6 +111,27 @@ describe("RenderQueue", () => {
     expect(calls).toHaveLength(2); // the fresh render is not stale
   });
 
+  it("a failed re-render keeps the old canvas and is not retried until the next relayout", async () => {
+    const { q, calls } = setup();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    q.setWanted(5, true);
+    await flush();
+    calls[0].resolve({ imageRects: [] });
+    await flush();
+    const old = q.get(5);
+    q.setLayout(boxes.map((b) => ({ ...b, width: b.width * 2 })));
+    await flush();
+    calls[1].reject(new Error("boom"));
+    await flush();
+    await flush();
+    expect(calls).toHaveLength(2);
+    expect(q.get(5)).toBe(old);
+    q.setLayout(boxes);
+    await flush();
+    expect(calls).toHaveLength(3);
+    warn.mockRestore();
+  });
+
   it("relayout while a stale page re-renders restarts it; leaving the zone evicts it", async () => {
     const { q, calls } = setup();
     q.setWanted(5, true);

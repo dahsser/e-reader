@@ -153,6 +153,8 @@ export class RenderQueue {
         (e: unknown) => {
           releaseCanvas(canvas);
           if (this.disposed || controller.signal.aborted || (e as Error)?.name === "AbortError") return;
+          // A stale page keeps showing its old canvas; don't retry until the next layout.
+          this.stale.delete(index);
           this.failed.add(index);
           console.warn(`Rendering page ${index + 1} failed`, e);
         },
