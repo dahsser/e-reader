@@ -99,8 +99,9 @@ export function useReaderSession(opts: ReaderSessionOptions) {
     if (!jump || !layout || !queue || !el || handledJump.current === jump.id) return;
     handledJump.current = jump.id;
     const page = Math.min(Math.max(jump.page, 0), sizes.length - 1);
-    posRef.current = { page, fraction: 0 };
-    el.scrollTop = scrollTopFor(posRef.current, layout.boxes);
+    el.scrollTop = scrollTopFor({ page, fraction: 0 }, layout.boxes);
+    // Read back: near the end scrollTop clamps, and then no scroll event may fire.
+    posRef.current = positionAt(el.scrollTop, layout.boxes);
   }, [jump, layout, queue, sizes]);
 
   useLayoutEffect(() => {

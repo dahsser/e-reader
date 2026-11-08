@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+/** Stable ref callback: selects once on mount, not on every re-render while editing. */
+const selectAll = (el: HTMLInputElement | null) => el?.select();
+
 export interface ToolbarProps {
   /** Present while a book is open. */
   page: { current: number; total: number } | null;
@@ -36,7 +39,7 @@ function PageIndicator({ current, total, onGoToPage }: { current: number; total:
         inputMode="numeric"
         className="page-input"
         defaultValue={current}
-        ref={(el) => el?.select()}
+        ref={selectAll}
         autoFocus
         onKeyDown={(e) => {
           if (e.key === "Escape") {
