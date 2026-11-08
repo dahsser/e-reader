@@ -8,6 +8,7 @@ export interface ToolbarProps {
   page: { current: number; total: number } | null;
   zoom: number;
   night: boolean;
+  shelfOpen: boolean;
   originalImages: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
@@ -59,10 +60,10 @@ function PageIndicator({ current, total, onGoToPage }: { current: number; total:
   );
 }
 
-export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight, onGoToPage, originalImages, onToggleImages }: ToolbarProps) {
+export function Toolbar({ page, zoom, night, shelfOpen, onZoomIn, onZoomOut, onShelf, onToggleNight, onGoToPage, originalImages, onToggleImages }: ToolbarProps) {
   return (
     <header className="toolbar" role="toolbar" aria-label="Reader controls">
-      <button type="button" aria-label="Shelf" title="Shelf" onClick={onShelf}>
+      <button type="button" aria-label="Shelf" aria-expanded={shelfOpen} title="Shelf" onClick={onShelf}>
         ☰
       </button>
       <span className="toolbar-spacer" />

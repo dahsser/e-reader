@@ -190,7 +190,6 @@ export default function App() {
         const services = await getServices();
         try {
           const meta = await uploadBook(file, services, { onPersistenceDenied: showPersistNotice });
-          setShelfOpen(false);
           return await openBookById(meta.id);
         } catch (e) {
           if (!(e instanceof LibraryFullError)) throw e;
@@ -233,7 +232,6 @@ export default function App() {
       const { file } = pending;
       const removedOpenBook = bookRef.current !== null && ids.includes(bookRef.current.meta.id);
       setPending(null);
-      setShelfOpen(false);
       setBusy(true);
       try {
         const { library } = await getServices();
@@ -260,6 +258,30 @@ export default function App() {
       }
     },
     [pending, addAndOpen, openFirstAvailable, showToast, libraryChanged],
+  );
+  const onDeleteBook = useCallback(
+    async (id: string) => {
+      const wasOpen = bookRef.current?.meta.id === id;
+      setBusy(true);
+      try {
+        const { library } = await getServices();
+        try {
+          await library.removeBooks([id]);
+        } catch (e) {
+          showToast(`Couldn't delete the book: ${errorText(e)}`);
+          // Removal may have gone through before failing.
+          if (wasOpen && !(await library.listBooks()).some((b) => b.id === id)) await openFirstAvailable();
+          return;
+        }
+        if (wasOpen) await openFirstAvailable();
+      } catch (e) {
+        showToast(`Couldn't delete the book: ${errorText(e)}`);
+      } finally {
+        libraryChanged();
+        setBusy(false);
+      }
+    },
+    [openFirstAvailable, showToast, libraryChanged],
   );
   const onCleanupCancel = useCallback(() => setPending(null), []);
 
@@ -362,6 +384,7 @@ export default function App() {
         page={book ? { current: page + 1, total: book.doc.numPages } : null}
         zoom={settings.zoom}
         night={settings.night}
+        shelfOpen={shelfOpen}
         originalImages={settings.originalImages}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
@@ -395,6 +418,7 @@ export default function App() {
           busy={busy}
           onOpenBook={onShelfOpenBook}
           onFile={onFile}
+          onDeleteBook={onDeleteBook}
           onClose={closeShelf}
         />
       )}

@@ -143,8 +143,7 @@ test("re-uploading the same file opens it instead of duplicating", async ({ page
   await page.getByRole("button", { name: "Shelf", exact: true }).click();
   await page.getByTestId("shelf-upload").setInputFiles(fixture("mixed"));
   await expect(indicator(page)).toHaveText("1 / 4");
-  await page.getByRole("button", { name: "Shelf", exact: true }).click();
-  await page.getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await page.getByTestId("shelf-upload").setInputFiles(fixture("long")); // the panel stays open
   await expect(indicator(page)).toHaveText("10 / 40");
   expect(await bookCount(page)).toBe(2);
 });

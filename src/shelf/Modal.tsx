@@ -14,11 +14,13 @@ export interface ModalProps {
   label: string;
   onClose: () => void;
   className?: string;
+  /** "drawer" slides in from the left as a full-height panel; behaviour is the same. */
+  variant?: "dialog" | "drawer";
   children: ReactNode;
 }
 
 /** A themed modal dialog: focus moves in on open and back on close; Escape or a backdrop click closes. */
-export function Modal({ label, onClose, className, children }: ModalProps) {
+export function Modal({ label, onClose, className, variant = "dialog", children }: ModalProps) {
   const ref = useRef<HTMLDivElement>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -39,7 +41,7 @@ export function Modal({ label, onClose, className, children }: ModalProps) {
 
   return (
     <div
-      className="modal-backdrop"
+      className={variant === "drawer" ? "modal-backdrop drawer-backdrop" : "modal-backdrop"}
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -50,7 +52,7 @@ export function Modal({ label, onClose, className, children }: ModalProps) {
         aria-modal="true"
         aria-label={label}
         tabIndex={-1}
-        className={className ? `modal ${className}` : "modal"}
+        className={["modal", variant === "drawer" && "drawer", className].filter(Boolean).join(" ")}
       >
         {children}
       </div>
