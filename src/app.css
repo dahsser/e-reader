@@ -23,6 +23,13 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app-bg
 .toolbar-spacer { flex: 1; }
 .zoom-level { min-width: 3.5em; text-align: center; font-variant-numeric: tabular-nums; }
 .page-indicator { margin-left: 12px; font-variant-numeric: tabular-nums; }
+.toolbar button.page-indicator { font-size: 14px; }
+.page-input {
+  width: 4ch; box-sizing: content-box; padding: 2px 4px; border-radius: 4px; text-align: right;
+  font: inherit; font-variant-numeric: tabular-nums;
+  background: var(--app-bg); color: var(--fg);
+  border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent);
+}
 
 /* Reader: the single scroll container. Always reserve the scrollbar so the width never flips. */
 .reader { flex: 1; min-height: 0; overflow: auto; overflow-y: scroll; background: var(--app-bg); }

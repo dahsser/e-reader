@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageSize, PdfDoc } from "./engine/types";
 import { applyTheme } from "./night/theme";
 import { Reader } from "./reader/Reader";
-import type { ReadingPosition } from "./reader/useReaderSession";
+import type { JumpRequest, ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
 import { clampZoom, loadSettings, saveSettings, ZOOM_STEP, type Settings } from "./settings/settings";
 import { CleanupDialog } from "./shelf/CleanupDialog";
@@ -53,6 +53,8 @@ export default function App() {
   const retiredDocs = useRef<PdfDoc[]>([]);
   const openSeq = useRef(0);
   const [page, setPage] = useState(0);
+  const [jump, setJump] = useState<JumpRequest | null>(null);
+  const jumpSeq = useRef(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [shelfOpen, setShelfOpen] = useState(false);
@@ -97,6 +99,7 @@ export default function App() {
         const next = { session: seq, meta, doc, sizes, position };
         bookRef.current = next;
         setPage(position?.page ?? 0);
+        setJump(null);
         setBook(next);
         return "opened";
       } catch (e) {
@@ -119,6 +122,7 @@ export default function App() {
     bookRef.current = null;
     setBook(null);
     setPage(0);
+    setJump(null);
     setReady(true);
   }, []);
 
@@ -281,6 +285,8 @@ export default function App() {
   const zoomOut = useCallback(() => changeZoom((z) => z - ZOOM_STEP), [changeZoom]);
   const onZoomStep = useCallback((dir: 1 | -1) => (dir > 0 ? zoomIn() : zoomOut()), [zoomIn, zoomOut]);
 
+  const onGoToPage = useCallback((p: number) => setJump({ page: p, id: ++jumpSeq.current }), []);
+
   const toggleNight = useCallback(() => {
     const updated = { ...settingsRef.current, night: !settingsRef.current.night };
     settingsRef.current = updated;
@@ -345,6 +351,7 @@ export default function App() {
         onZoomOut={zoomOut}
         onShelf={openShelf}
         onToggleNight={toggleNight}
+        onGoToPage={onGoToPage}
       />
       {persistNotice && <PersistNotice onDismiss={onDismissPersistNotice} />}
       {book ? (
@@ -357,6 +364,7 @@ export default function App() {
           onPageChange={setPage}
           savePosition={savePosition}
           onZoomStep={onZoomStep}
+          jump={jump}
         />
       ) : ready ? (
         <EmptyState busy={busy} onFile={onFile} />

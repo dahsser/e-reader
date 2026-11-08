@@ -19,6 +19,13 @@ export interface ReadingPosition {
   fraction: number;
 }
 
+/** Ask the reader to scroll a page to the top; each request has its own `id`. */
+export interface JumpRequest {
+  /** 0-based page. */
+  page: number;
+  id: number;
+}
+
 export interface ReaderSessionOptions {
   doc: PdfDoc;
   sizes: PageSize[];
@@ -29,6 +36,7 @@ export interface ReaderSessionOptions {
   /** Rejects if the write failed; the position is then saved again on the next flush. */
   savePosition: (pos: ReadingPosition) => Promise<void>;
   onZoomStep: (direction: 1 | -1) => void;
+  jump: JumpRequest | null;
 }
 
 /**
@@ -81,6 +89,19 @@ export function useReaderSession(opts: ReaderSessionOptions) {
     el.scrollTop = scrollTopFor(posRef.current, layout.boxes);
     latest.current.onPageChange(positionAt(el.scrollTop + INDICATOR_SLACK, layout.boxes).page);
   }, [layout, queue]);
+
+  // Go-to-page requests: each id is handled once. The scroll handler then
+  // updates the indicator, the render focus and the saved position.
+  const handledJump = useRef<number | null>(null);
+  const { jump } = opts;
+  useLayoutEffect(() => {
+    const el = mainRef.current;
+    if (!jump || !layout || !queue || !el || handledJump.current === jump.id) return;
+    handledJump.current = jump.id;
+    const page = Math.min(Math.max(jump.page, 0), sizes.length - 1);
+    posRef.current = { page, fraction: 0 };
+    el.scrollTop = scrollTopFor(posRef.current, layout.boxes);
+  }, [jump, layout, queue, sizes]);
 
   useLayoutEffect(() => {
     if (queue && layout) queue.setLayout(layout.boxes);

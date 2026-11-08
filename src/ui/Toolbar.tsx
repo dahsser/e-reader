@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export interface ToolbarProps {
   /** Present while a book is open. */
   page: { current: number; total: number } | null;
@@ -7,9 +9,52 @@ export interface ToolbarProps {
   onZoomOut: () => void;
   onShelf: () => void;
   onToggleNight: () => void;
+  /** 0-based page, already clamped to the book. */
+  onGoToPage: (page: number) => void;
 }
 
-export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight }: ToolbarProps) {
+function PageIndicator({ current, total, onGoToPage }: { current: number; total: number; onGoToPage: (page: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="page-indicator"
+        data-testid="page-indicator"
+        title="Go to page"
+        onClick={() => setEditing(true)}
+      >
+        {current} / {total}
+      </button>
+    );
+  }
+  return (
+    <span className="page-indicator" data-testid="page-indicator">
+      <input
+        data-testid="page-input"
+        aria-label="Page number"
+        inputMode="numeric"
+        className="page-input"
+        defaultValue={current}
+        ref={(el) => el?.select()}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setEditing(false);
+          } else if (e.key === "Enter") {
+            const n = parseInt(e.currentTarget.value, 10);
+            setEditing(false);
+            if (!Number.isNaN(n)) onGoToPage(Math.min(Math.max(n, 1), total) - 1);
+          }
+        }}
+        onBlur={() => setEditing(false)}
+      />{" "}
+      <span>/ {total}</span>
+    </span>
+  );
+}
+
+export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight, onGoToPage }: ToolbarProps) {
   return (
     <header className="toolbar" role="toolbar" aria-label="Reader controls">
       <button type="button" aria-label="Shelf" title="Shelf" onClick={onShelf}>
@@ -25,9 +70,7 @@ export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onTog
           <button type="button" aria-label="Zoom in" onClick={onZoomIn}>
             +
           </button>
-          <span className="page-indicator" data-testid="page-indicator">
-            {page.current} / {page.total}
-          </span>
+          <PageIndicator current={page.current} total={page.total} onGoToPage={onGoToPage} />
         </>
       )}
       <span className="toolbar-spacer" />
