@@ -193,6 +193,21 @@ test("original images show raster diagrams with their white background", async (
   expectChannelsAtMost(await elementPixel(wrapper, 0.06, 0.262), 60);
 });
 
+test("original images and photo colours survive a zoom (re-rendered pages)", async ({ page }) => {
+  await open(page, "mixed", 4);
+  await setNight(page, true);
+  await setImages(page, true);
+  const figure = await showPage(page, 2);
+  const firstCanvas = await figure.locator(".page-base").elementHandle();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  // Wait for the sharp re-render to replace the stretched canvas.
+  await expect.poll(() => firstCanvas!.evaluate((c) => c.isConnected)).toBe(false);
+  await expect(figure.locator(".figure-overlay")).toHaveCount(1);
+  expectChannelsAtLeast(await elementPixel(figure, 0.06, 0.262), 180);
+  const photo = await showPage(page, 1);
+  await expect(photo.locator(".photo-overlay")).toHaveCount(1);
+});
+
 test("original images: transparent line art gets a white background", async ({ page }) => {
   await open(page, "mixed", 4);
   await setNight(page, true);

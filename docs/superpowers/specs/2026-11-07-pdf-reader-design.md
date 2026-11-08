@@ -111,3 +111,9 @@ Keep pdf.js behind a small internal module (open document, page count/sizes, ren
 2. **Original images at night (second toggle).** A toolbar button left of ☾, shown only in night mode. On: every embedded image (diagrams, screenshots, charts, line art, photos) is shown as in the original, with its own white background, cut exactly to the image's rectangle; the rest of the page stays dark. Images stay lightly dimmed (`brightness(0.85)`, same as photos). Off: today's behaviour (only photos keep their colours). Full-page scans stay dark either way. Persisted like night mode; key `i` toggles it while night is on.
    - *My call:* images smaller than 0.1% of the page area (bullets, rules, specks) are left to the page transform.
 3. **Go to page.** Clicking the "53 / 80" indicator turns the number into an input. Enter jumps to the top of that page; Esc or clicking away cancels; out-of-range numbers go to the nearest valid page; non-numbers are ignored.
+
+## v1.2 additions (2026-11-08, asked in chat)
+
+1. **Smooth pinch / Ctrl+wheel zoom.** Trackpad pinch and Ctrl/⌘+wheel zoom continuously (1% resolution, 50–300%), anchored at the pointer: the point under the cursor stays under the cursor. During the gesture the pages re-lay out every frame and the existing canvases stretch to fit; pages are re-rendered sharp ~150 ms after the gesture settles, and an old canvas stays on screen until its replacement is ready (no blank flash). A mouse-wheel notch zooms about 10%. Safari's pinch (gesture events) behaves the same.
+   - +/− buttons and Ctrl/⌘ +/− step to the next 10% mark (123% → 130% / 120%) and keep the top-of-view position, as before. Window resizes use the same keep-the-old-canvas re-render.
+2. **Fix: original images / photo colours after zoom.** pdf.js reports image positions only on a page's first render; re-rendered pages (zoom, scrolling back) lost their overlays. The engine now falls back to the page's cached positions.

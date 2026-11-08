@@ -10,10 +10,20 @@ export const ZOOM_STEP = 0.1;
 
 const KEY = "reader.settings";
 
+/** In range, at 1% resolution (pinch zoom is continuous; buttons use `stepZoom`). */
 export function clampZoom(z: number): number {
   if (!Number.isFinite(z)) return 1;
   const clamped = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
-  return Math.round(clamped * 10) / 10;
+  return Math.round(clamped * 100) / 100;
+}
+
+/** The next ZOOM_STEP mark up or down: 1.23 → 1.3 / 1.2, 1.2 → 1.3 / 1.1. */
+export function stepZoom(z: number, direction: 1 | -1): number {
+  const marks = z / ZOOM_STEP;
+  // Tolerance so float noise (0.8999999999999999) counts as being on the mark.
+  const onMark = Math.abs(marks - Math.round(marks)) < 1e-6;
+  const current = onMark ? Math.round(marks) : direction > 0 ? Math.floor(marks) : Math.ceil(marks);
+  return clampZoom((current + direction) * ZOOM_STEP);
 }
 
 // NOTE: index.html has an inline pre-paint script that duplicates the night

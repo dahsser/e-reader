@@ -53,7 +53,10 @@ function wrapDoc(doc: PDFDocumentProxy, destroyTask: () => Promise<void>): PdfDo
     } finally {
       signal?.removeEventListener("abort", onAbort);
     }
-    return { imageRects: rectsFromImageCoordinates(task.imageCoordinates) };
+    // pdf.js records image positions only on a page's first render (they are normalised, so
+    // scale-independent) and caches them on the page; later tasks report null.
+    const coords = (task.imageCoordinates ?? page.imageCoordinates) as ArrayLike<number> | null;
+    return { imageRects: rectsFromImageCoordinates(coords) };
   };
 
   return {

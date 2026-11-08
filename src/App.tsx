@@ -4,7 +4,7 @@ import { applyImages, applyTheme } from "./night/theme";
 import { Reader } from "./reader/Reader";
 import type { JumpRequest, ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
-import { clampZoom, loadSettings, saveSettings, ZOOM_STEP, type Settings } from "./settings/settings";
+import { clampZoom, loadSettings, saveSettings, stepZoom, type Settings } from "./settings/settings";
 import { CleanupDialog } from "./shelf/CleanupDialog";
 import { formatMB } from "./shelf/format";
 import { Shelf } from "./shelf/Shelf";
@@ -319,9 +319,9 @@ export default function App() {
     setSettings(updated);
     saveSettings(updated);
   }, []);
-  const zoomIn = useCallback(() => changeZoom((z) => z + ZOOM_STEP), [changeZoom]);
-  const zoomOut = useCallback(() => changeZoom((z) => z - ZOOM_STEP), [changeZoom]);
-  const onZoomStep = useCallback((dir: 1 | -1) => (dir > 0 ? zoomIn() : zoomOut()), [zoomIn, zoomOut]);
+  const zoomIn = useCallback(() => changeZoom((z) => stepZoom(z, 1)), [changeZoom]);
+  const zoomOut = useCallback(() => changeZoom((z) => stepZoom(z, -1)), [changeZoom]);
+  const onZoomTo = useCallback((zoom: number) => changeZoom(() => zoom), [changeZoom]);
 
   const onGoToPage = useCallback((p: number) => setJump({ page: p, id: ++jumpSeq.current }), []);
 
@@ -418,7 +418,7 @@ export default function App() {
           zoom={settings.zoom}
           onPageChange={setPage}
           savePosition={savePosition}
-          onZoomStep={onZoomStep}
+          onZoomTo={onZoomTo}
           jump={jump}
         />
       ) : ready ? (
