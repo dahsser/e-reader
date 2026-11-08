@@ -34,4 +34,6 @@ test("app.css night filters match theme.ts", () => {
   expect(css).toContain(`[data-theme="night"] .page-base { filter: ${NIGHT_PAGE_FILTER}; }`);
   expect(css).toContain(`[data-theme="night"] .photo-overlay { filter: ${PHOTO_FILTER}; }`);
   expect(css).toContain(`[data-theme="day"] .photo-overlay { display: none; }`);
+  expect(css).toContain(`[data-theme="night"][data-images="original"] .figure-overlay { display: block; filter: ${PHOTO_FILTER}; }`);
+  expect(css).toContain(`.figure-overlay { position: absolute; display: none; }`);
 });

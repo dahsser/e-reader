@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageSize, PdfDoc } from "./engine/types";
-import { applyTheme } from "./night/theme";
+import { applyImages, applyTheme } from "./night/theme";
 import { Reader } from "./reader/Reader";
-import type { ReadingPosition } from "./reader/useReaderSession";
+import type { JumpRequest, ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
 import { clampZoom, loadSettings, saveSettings, ZOOM_STEP, type Settings } from "./settings/settings";
 import { CleanupDialog } from "./shelf/CleanupDialog";
@@ -52,7 +52,12 @@ export default function App() {
   const bookRef = useRef<OpenBook | null>(null);
   const retiredDocs = useRef<PdfDoc[]>([]);
   const openSeq = useRef(0);
+  /** Id of the open in flight (set at its start, cleared when that open finishes). */
+  const openingId = useRef<{ seq: number; id: string } | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [jump, setJump] = useState<JumpRequest | null>(null);
+  const jumpSeq = useRef(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<{ id: number; text: string } | null>(null);
   const [shelfOpen, setShelfOpen] = useState(false);
@@ -70,6 +75,7 @@ export default function App() {
   const openBookById = useCallback(
     async (id: string): Promise<OpenResult> => {
       const seq = ++openSeq.current;
+      openingId.current = { seq, id };
       try {
         const { engine, library } = await getServices();
         const { book: meta, bytes, position } = await library.openBook(id);
@@ -97,6 +103,7 @@ export default function App() {
         const next = { session: seq, meta, doc, sizes, position };
         bookRef.current = next;
         setPage(position?.page ?? 0);
+        setJump(null);
         setBook(next);
         return "opened";
       } catch (e) {
@@ -104,6 +111,7 @@ export default function App() {
         showToast(`Couldn't open this book: ${errorText(e)}`);
         return "failed";
       } finally {
+        if (openingId.current?.seq === seq) openingId.current = null;
         if (seq === openSeq.current) setReady(true);
         libraryChanged(); // lastOpenedAt moved
       }
@@ -119,6 +127,7 @@ export default function App() {
     bookRef.current = null;
     setBook(null);
     setPage(0);
+    setJump(null);
     setReady(true);
   }, []);
 
@@ -143,6 +152,7 @@ export default function App() {
   // Startup: reopen the last book, else the first on the shelf that opens, else show the empty state.
   useEffect(() => {
     applyTheme(settingsRef.current.night);
+    applyImages(settingsRef.current.originalImages);
     let cancelled = false;
     (async () => {
       try {
@@ -185,7 +195,6 @@ export default function App() {
         const services = await getServices();
         try {
           const meta = await uploadBook(file, services, { onPersistenceDenied: showPersistNotice });
-          setShelfOpen(false);
           return await openBookById(meta.id);
         } catch (e) {
           if (!(e instanceof LibraryFullError)) throw e;
@@ -228,7 +237,6 @@ export default function App() {
       const { file } = pending;
       const removedOpenBook = bookRef.current !== null && ids.includes(bookRef.current.meta.id);
       setPending(null);
-      setShelfOpen(false);
       setBusy(true);
       try {
         const { library } = await getServices();
@@ -256,6 +264,40 @@ export default function App() {
     },
     [pending, addAndOpen, openFirstAvailable, showToast, libraryChanged],
   );
+  const onDeleteBook = useCallback(
+    async (id: string) => {
+      const wasOpen = bookRef.current?.meta.id === id;
+      // A book still opening is dropped like the open one: cancel that open, then fall back.
+      const wasOpening = openingId.current?.id === id;
+      if (wasOpening) ++openSeq.current;
+      const seqBefore = openSeq.current;
+      const fallback = wasOpen || wasOpening;
+      setBusy(true);
+      setDeletingId(id);
+      try {
+        const { library } = await getServices();
+        try {
+          await library.removeBooks([id]);
+        } catch (e) {
+          showToast(`Couldn't delete the book: ${errorText(e)}`);
+          // Removal may have gone through before failing.
+          if (fallback && openSeq.current === seqBefore && !(await library.listBooks()).some((b) => b.id === id)) {
+            await openFirstAvailable();
+          }
+          return;
+        }
+        // Skip the fallback if the user opened or closed something meanwhile.
+        if (fallback && openSeq.current === seqBefore) await openFirstAvailable();
+      } catch (e) {
+        showToast(`Couldn't delete the book: ${errorText(e)}`);
+      } finally {
+        libraryChanged();
+        setDeletingId(null);
+        setBusy(false);
+      }
+    },
+    [openFirstAvailable, showToast, libraryChanged],
+  );
   const onCleanupCancel = useCallback(() => setPending(null), []);
 
   const openShelf = useCallback(() => setShelfOpen(true), []);
@@ -281,6 +323,8 @@ export default function App() {
   const zoomOut = useCallback(() => changeZoom((z) => z - ZOOM_STEP), [changeZoom]);
   const onZoomStep = useCallback((dir: 1 | -1) => (dir > 0 ? zoomIn() : zoomOut()), [zoomIn, zoomOut]);
 
+  const onGoToPage = useCallback((p: number) => setJump({ page: p, id: ++jumpSeq.current }), []);
+
   const toggleNight = useCallback(() => {
     const updated = { ...settingsRef.current, night: !settingsRef.current.night };
     settingsRef.current = updated;
@@ -289,18 +333,32 @@ export default function App() {
     saveSettings(updated);
   }, []);
 
-  // `n` toggles night view anywhere, except while typing or with modifiers held.
+  const toggleImages = useCallback(() => {
+    const updated = { ...settingsRef.current, originalImages: !settingsRef.current.originalImages };
+    settingsRef.current = updated;
+    applyImages(updated.originalImages);
+    setSettings(updated);
+    saveSettings(updated);
+  }, []);
+
+  // `n` toggles night view (and `i` original images, in night view) anywhere, except while typing or with modifiers held.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "n" || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if ((e.key !== "n" && e.key !== "i") || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.key === "i") {
+        if (!settingsRef.current.night) return;
+        e.preventDefault();
+        toggleImages();
+        return;
+      }
       e.preventDefault();
       toggleNight();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleNight]);
+  }, [toggleNight, toggleImages]);
 
   // Ctrl/⌘ + = / + / - / 0 while reading.
   useEffect(() => {
@@ -341,10 +399,14 @@ export default function App() {
         page={book ? { current: page + 1, total: book.doc.numPages } : null}
         zoom={settings.zoom}
         night={settings.night}
+        shelfOpen={shelfOpen}
+        originalImages={settings.originalImages}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onShelf={openShelf}
         onToggleNight={toggleNight}
+        onToggleImages={toggleImages}
+        onGoToPage={onGoToPage}
       />
       {persistNotice && <PersistNotice onDismiss={onDismissPersistNotice} />}
       {book ? (
@@ -357,6 +419,7 @@ export default function App() {
           onPageChange={setPage}
           savePosition={savePosition}
           onZoomStep={onZoomStep}
+          jump={jump}
         />
       ) : ready ? (
         <EmptyState busy={busy} onFile={onFile} />
@@ -368,8 +431,10 @@ export default function App() {
           version={libraryVersion}
           currentId={book?.meta.id ?? null}
           busy={busy}
+          deleting={deletingId !== null}
           onOpenBook={onShelfOpenBook}
           onFile={onFile}
+          onDeleteBook={onDeleteBook}
           onClose={closeShelf}
         />
       )}

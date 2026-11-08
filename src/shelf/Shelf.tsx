@@ -43,14 +43,19 @@ export interface ShelfProps {
   version: number;
   currentId: string | null;
   busy: boolean;
+  /** The busy work is a delete (the Add button then isn't "Adding…"). */
+  deleting?: boolean;
   onOpenBook: (id: string) => void;
   onFile: (file: File) => void;
+  onDeleteBook: (id: string) => void;
   onClose: () => void;
 }
 
-export function Shelf({ version, currentId, busy, onOpenBook, onFile, onClose }: ShelfProps) {
+export function Shelf({ version, currentId, busy, deleting = false, onOpenBook, onFile, onDeleteBook, onClose }: ShelfProps) {
   const [data, setData] = useState<ShelfData | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** The one row asking "Delete this book?". */
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -79,53 +84,88 @@ export function Shelf({ version, currentId, busy, onOpenBook, onFile, onClose }:
   };
 
   return (
-    <Modal label="Shelf" onClose={onClose} className="shelf">
+    <Modal label="Shelf" onClose={onClose} className="shelf" variant="drawer">
       <div className="modal-header">
         <h2>Shelf</h2>
         <button type="button" className="icon-button" aria-label="Close shelf" onClick={onClose}>
           ×
         </button>
       </div>
-      {data && <UsageBar usedBytes={data.usedBytes} capBytes={data.capBytes} />}
+      <label className="button-primary shelf-add" aria-disabled={busy}>
+        {busy && !deleting ? "Adding…" : "Add PDF"}
+        <input
+          type="file"
+          data-testid="shelf-upload"
+          accept="application/pdf"
+          className="visually-hidden"
+          disabled={busy}
+          onChange={onChange}
+        />
+      </label>
       {error && <p className="shelf-message">Couldn't load the shelf: {error}</p>}
       {data && data.entries.length === 0 && <p className="shelf-message">No books yet.</p>}
       {data && data.entries.length > 0 && (
         <ul className="shelf-list">
           {data.entries.map(({ book, progress }) => (
-            <li key={book.id}>
-              <button
-                type="button"
-                className="shelf-book"
-                data-testid="shelf-book"
-                aria-current={book.id === currentId ? "true" : undefined}
-                onClick={() => onOpenBook(book.id)}
-              >
-                <Thumbnail blob={book.thumbnail} />
-                <span className="book-text">
-                  <span className="book-title">{book.title}</span>
-                  <span className="book-detail">{book.fileName}</span>
-                  <span className="book-detail">
-                    {formatProgress(progress)} read · {formatMB(book.size)}
+            <li key={book.id} className="shelf-row">
+              <div className="shelf-row-main">
+                <button
+                  type="button"
+                  className="shelf-book"
+                  data-testid="shelf-book"
+                  aria-current={book.id === currentId ? "true" : undefined}
+                  onClick={() => onOpenBook(book.id)}
+                >
+                  <Thumbnail blob={book.thumbnail} />
+                  <span className="book-text">
+                    <span className="book-title">{book.title}</span>
+                    <span className="book-detail">{book.fileName}</span>
+                    <span className="book-detail">
+                      {formatProgress(progress)} read · {formatMB(book.size)}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                <button
+                  type="button"
+                  data-testid="shelf-delete"
+                  className="icon-button"
+                  aria-label={`Delete ${book.title}`}
+                  title="Delete"
+                  disabled={busy}
+                  onClick={() => setConfirmId(book.id)}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M3 6h18" />
+                    <path d="M8 6V4h8v2" />
+                    <path d="M19 6l-1 14H6L5 6" />
+                    <path d="M10 11v6M14 11v6" />
+                  </svg>
+                </button>
+              </div>
+              {confirmId === book.id && (
+                <div className="shelf-confirm" role="group" aria-label="Confirm delete">
+                  <span>Delete this book?</span>
+                  <button
+                    type="button"
+                    className="button-secondary button-danger"
+                    disabled={busy}
+                    onClick={() => {
+                      setConfirmId(null);
+                      onDeleteBook(book.id);
+                    }}
+                  >
+                    Delete
+                  </button>
+                  <button type="button" className="button-secondary" onClick={() => setConfirmId(null)}>
+                    Cancel
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
-      <div className="modal-actions">
-        <label className="button-primary" aria-disabled={busy}>
-          {busy ? "Adding…" : "Add a PDF"}
-          <input
-            type="file"
-            data-testid="shelf-upload"
-            accept="application/pdf"
-            className="visually-hidden"
-            disabled={busy}
-            onChange={onChange}
-          />
-        </label>
-      </div>
+      {data && <UsageBar usedBytes={data.usedBytes} capBytes={data.capBytes} />}
     </Modal>
   );
 }

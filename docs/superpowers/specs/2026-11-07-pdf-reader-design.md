@@ -104,3 +104,10 @@ Keep pdf.js behind a small internal module (open document, page count/sizes, ren
 - How "MB used" is computed (sum of stored PDF sizes is sufficient; thumbnails/metadata may be ignored or included).
 - Test strategy (unit tests for storage/eviction/position logic; a browser test for resume + night view recommended).
 - Project layout (app at repo root next to `spikes/` is fine). The directory is not yet a git repository.
+
+## v1.1 additions (2026-11-07, approved in chat)
+
+1. **Shelf as a left side panel.** ☰ slides a panel in from the left over the book (replaces the centred shelf dialog). Esc or a click outside closes it. Top: "Add PDF". Middle: books, most recently read first, each with page-1 thumbnail, title, file name, progress and size; the open book is highlighted; clicking one opens it and closes the panel. Each book has a **delete** button that asks once more inline ("Delete" / "Cancel") — deleting is permanent; the reading position is kept (as with clean-up). Bottom: the usage meter. The panel stays open after adding or deleting. Deleting the open book opens the next book on the shelf, or the empty state if none is left.
+2. **Original images at night (second toggle).** A toolbar button left of ☾, shown only in night mode. On: every embedded image (diagrams, screenshots, charts, line art, photos) is shown as in the original, with its own white background, cut exactly to the image's rectangle; the rest of the page stays dark. Images stay lightly dimmed (`brightness(0.85)`, same as photos). Off: today's behaviour (only photos keep their colours). Full-page scans stay dark either way. Persisted like night mode; key `i` toggles it while night is on.
+   - *My call:* images smaller than 0.1% of the page area (bullets, rules, specks) are left to the page transform.
+3. **Go to page.** Clicking the "53 / 80" indicator turns the number into an input. Enter jumps to the top of that page; Esc or clicking away cancels; out-of-range numbers go to the nearest valid page; non-numbers are ignored.

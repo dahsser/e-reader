@@ -31,11 +31,13 @@ async function openShelf(page: Page) {
   await expect(shelf(page)).toBeVisible();
 }
 
-/** Upload from the shelf; a book that fits opens and the shelf closes. */
+/** Upload from the shelf; a book that fits opens and the shelf stays open, then Escape closes it. */
 async function uploadFromShelf(page: Page, name: Name) {
   await openShelf(page);
   await shelf(page).getByTestId("shelf-upload").setInputFiles(fixture(name));
   await expectOpen(page, name);
+  await expect(shelf(page)).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(shelf(page)).toHaveCount(0);
 }
 
@@ -119,9 +121,7 @@ test("full shelf opens clean-up ordered least read first", async ({ page }) => {
   await confirmButton(page).click();
   await expectOpen(page, "scan");
   await expect(cleanup(page)).toHaveCount(0);
-  await expect(shelf(page)).toHaveCount(0);
-
-  await openShelf(page);
+  await expect(shelf(page)).toBeVisible();
   await expect(shelfBooks(page)).toHaveCount(2);
   await expect(shelfBooks(page).nth(0)).toContainText("scan.pdf");
   await expect(shelfBooks(page).nth(1)).toContainText("long.pdf");
@@ -163,7 +163,6 @@ test("removing the open book opens the next one", async ({ page }) => {
   await expect(page.getByRole("alert")).toContainText("Couldn't save this book");
   await expectOpen(page, "long");
   await expect(cleanup(page)).toHaveCount(0);
-  await openShelf(page);
   await expect(shelfBooks(page)).toHaveCount(1);
   await expect(shelfBooks(page).nth(0)).toContainText("long.pdf");
 });
@@ -180,9 +179,87 @@ test("removing the only book shows the empty state", async ({ page }) => {
   await confirmButton(page).click();
 
   await expect(page.getByRole("alert")).toContainText("Couldn't save this book");
+  await page.keyboard.press("Escape");
   await expect(page.getByTestId("upload-input")).toBeAttached();
   await expect(indicator(page)).toHaveCount(0);
   expect(await bookCount(page)).toBe(0);
+});
+
+test("shelf is a panel on the left", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await expect(shelfButton(page)).toHaveAttribute("aria-expanded", "false");
+  await openShelf(page);
+  await expect(shelfButton(page)).toHaveAttribute("aria-expanded", "true");
+  const vp = page.viewportSize()!;
+  await expect(async () => {
+    const box = (await shelf(page).boundingBox())!;
+    expect(box.x).toBeLessThanOrEqual(1);
+    expect(box.height).toBeGreaterThanOrEqual(vp.height - 1);
+    expect(box.width).toBeLessThanOrEqual(400);
+  }).toPass();
+  await page.mouse.click(vp.width - 20, 300);
+  await expect(shelf(page)).toHaveCount(0);
+});
+
+const rowOf = (page: Page, file: string) => shelf(page).getByRole("listitem").filter({ hasText: file });
+
+test("deleting a book asks first, then removes it", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await uploadFromShelf(page, "mixed");
+  await openShelf(page);
+  await expect(shelfBooks(page)).toHaveCount(2);
+
+  const row = rowOf(page, "long.pdf");
+  await row.getByTestId("shelf-delete").click();
+  await expect(row.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+  await row.getByRole("button", { name: "Cancel" }).click();
+  await expect(shelfBooks(page)).toHaveCount(2);
+  expect(await bookCount(page)).toBe(2);
+
+  await row.getByTestId("shelf-delete").click();
+  await row.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(shelfBooks(page)).toHaveCount(1);
+  expect(await bookCount(page)).toBe(1);
+  await expect(shelf(page).getByTestId("usage")).toHaveText(/^\d+ MB of 500 MB$/);
+  await expect(shelf(page)).toBeVisible();
+  await expectOpen(page, "mixed");
+});
+
+test("deleting the open book opens the next one; deleting the last shows the empty state", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await uploadFromShelf(page, "mixed");
+  await openShelf(page);
+
+  await rowOf(page, "mixed.pdf").getByTestId("shelf-delete").click();
+  await rowOf(page, "mixed.pdf").getByRole("button", { name: "Delete", exact: true }).click();
+  await expectOpen(page, "long");
+  await expect(shelfBooks(page)).toHaveCount(1);
+  await expect(shelf(page)).toBeVisible();
+
+  await rowOf(page, "long.pdf").getByTestId("shelf-delete").click();
+  await rowOf(page, "long.pdf").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(shelf(page)).toContainText("No books yet.");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("upload-input")).toBeAttached();
+  expect(await bookCount(page)).toBe(0);
+});
+
+test("a deleted book resumes where it was when added again", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await page.locator('[data-testid="page"][data-page="9"]').evaluate((el) => el.scrollIntoView({ block: "start" }));
+  await expectOpen(page, "long", 10);
+  await page.waitForTimeout(600);
+
+  await openShelf(page);
+  await rowOf(page, "long.pdf").getByTestId("shelf-delete").click();
+  await rowOf(page, "long.pdf").getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(shelf(page)).toContainText("No books yet.");
+  await shelf(page).getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await expectOpen(page, "long", 10);
 });
 
 test("a file that isn't a PDF never opens clean-up, even when the shelf is full", async ({ page }) => {
@@ -352,4 +429,16 @@ test("no persistence notice when storage is persisted", async ({ page }) => {
   await uploadFirst(page, "long");
   await page.waitForTimeout(300);
   await expect(page.getByText(PERSIST_NOTICE)).toHaveCount(0);
+});
+
+test("a toast over the open shelf can be dismissed and leaves the panel open", async ({ page }) => {
+  await page.goto("/");
+  await uploadFirst(page, "long");
+  await openShelf(page);
+  await shelf(page).getByTestId("shelf-upload").setInputFiles({ name: "x.pdf", mimeType: "application/pdf", buffer: Buffer.from("hello") });
+  const toast = page.getByRole("alert");
+  await expect(toast).toContainText("Couldn't open this file as a PDF");
+  await toast.getByRole("button", { name: "Dismiss" }).click({ timeout: 3000 });
+  await expect(toast).toHaveCount(0);
+  await expect(shelf(page)).toBeVisible();
 });

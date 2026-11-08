@@ -8,7 +8,7 @@ export function Reader(props: ReaderSessionOptions) {
   const left = Math.max(READER_PADDING, (width - pageWidth) / 2);
 
   return (
-    <main ref={mainRef} className="reader">
+    <main ref={mainRef} className="reader" tabIndex={-1}>
       {layout && queue && (
         <div
           className="reader-content"

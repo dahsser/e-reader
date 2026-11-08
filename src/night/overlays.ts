@@ -1,5 +1,5 @@
 import type { NormRect } from "../engine/types";
-import { photoRects } from "./classify";
+import { classifyImages } from "./classify";
 
 export interface PixelRect { x: number; y: number; w: number; h: number }
 
@@ -22,29 +22,31 @@ export function toPixelRect(r: NormRect, width: number, height: number): PixelRe
 }
 
 /**
- * One `<canvas class="photo-overlay">` per image on `base` that the heuristic
- * calls a photo, copied pixel-for-pixel from the (unfiltered) base render and
+ * One overlay canvas per image on `base` (`photo-overlay` for photos,
+ * `figure-overlay` for figures), copied pixel-for-pixel from the (unfiltered) base render and
  * positioned in % of the page box. Night CSS filters the base but only dims
- * the overlays, so photos keep their true colours. Built regardless of the
- * current theme so toggling is instant; day CSS hides them.
+ * the overlays, so photos keep their true colours; figure overlays show only
+ * with the original-images toggle. Built regardless of the current settings
+ * so toggling is instant; CSS hides them.
  */
-export function createPhotoOverlays(base: HTMLCanvasElement, imageRects: NormRect[]): HTMLCanvasElement[] {
+export function createImageOverlays(base: HTMLCanvasElement, imageRects: NormRect[]): HTMLCanvasElement[] {
   const { width, height } = base;
   if (width === 0 || height === 0 || imageRects.length === 0) return [];
   try {
     const ctx = base.getContext("2d", { willReadFrequently: true });
     if (!ctx) return [];
     const empty = new Uint8ClampedArray(0);
-    const photos = photoRects(imageRects, (r) => {
+    const { photos, figures } = classifyImages(imageRects, (r) => {
       const p = toPixelRect(r, width, height);
       return p ? ctx.getImageData(p.x, p.y, p.w, p.h).data : empty;
     });
     const overlays: HTMLCanvasElement[] = [];
-    for (const r of photos) {
+    const kinds: [NormRect[], string][] = [[photos, "photo-overlay"], [figures, "figure-overlay"]];
+    for (const [rects, className] of kinds) for (const r of rects) {
       const p = toPixelRect(r, width, height);
       if (!p) continue;
       const overlay = document.createElement("canvas");
-      overlay.className = "photo-overlay";
+      overlay.className = className;
       overlay.width = p.w;
       overlay.height = p.h;
       overlay.getContext("2d")?.drawImage(base, p.x, p.y, p.w, p.h, 0, 0, p.w, p.h);

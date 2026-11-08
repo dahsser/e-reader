@@ -143,8 +143,7 @@ test("re-uploading the same file opens it instead of duplicating", async ({ page
   await page.getByRole("button", { name: "Shelf", exact: true }).click();
   await page.getByTestId("shelf-upload").setInputFiles(fixture("mixed"));
   await expect(indicator(page)).toHaveText("1 / 4");
-  await page.getByRole("button", { name: "Shelf", exact: true }).click();
-  await page.getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await page.getByTestId("shelf-upload").setInputFiles(fixture("long")); // the panel stays open
   await expect(indicator(page)).toHaveText("10 / 40");
   expect(await bookCount(page)).toBe(2);
 });
@@ -229,4 +228,101 @@ test("a failed position save is reported once and retried", async ({ page }) => 
   await expect.poll(() => storedPage(page)).toBe(14);
   await page.reload();
   await expect(indicator(page)).toHaveText("15 / 40");
+});
+
+const pageInput = (page: Page) => page.getByTestId("page-input");
+
+async function goTo(page: Page, text: string) {
+  await indicator(page).click();
+  await pageInput(page).fill(text);
+  await pageInput(page).press("Enter");
+}
+
+test("go to page: typing a number and Enter jumps to that page", async ({ page }) => {
+  await openLong(page);
+  await indicator(page).click();
+  await expect(pageInput(page)).toBeFocused();
+  await expect(pageInput(page)).toHaveValue("1");
+  expect(await pageInput(page).evaluate((el: HTMLInputElement) => [el.selectionStart, el.selectionEnd])).toEqual([0, 1]);
+  await pageInput(page).fill("25");
+  await pageInput(page).press("Enter");
+  await expect(indicator(page)).toHaveText("25 / 40");
+  const mainTop = (await page.locator("main").boundingBox())!.y;
+  const pageTop = (await pageWrapper(page, 24).boundingBox())!.y;
+  expect(Math.abs(pageTop - (mainTop + 16))).toBeLessThan(20);
+  await page.waitForTimeout(600);
+  await page.reload();
+  await expect(indicator(page)).toHaveText("25 / 40");
+});
+
+test("go to page clamps out-of-range numbers", async ({ page }) => {
+  await openLong(page);
+  await goTo(page, "900");
+  await expect.poll(async () => Number((await indicator(page).innerText()).split(" / ")[0])).toBeGreaterThanOrEqual(39);
+  await expect(pageWrapper(page, 39)).toBeInViewport();
+  await goTo(page, "0");
+  await expect(indicator(page)).toHaveText("1 / 40");
+});
+
+test("go to page: Escape, blur and non-numbers cancel", async ({ page }) => {
+  await openLong(page);
+  await indicator(page).click();
+  await pageInput(page).fill("12");
+  await pageInput(page).press("Escape");
+  await expect(indicator(page)).toHaveText("1 / 40");
+  await expect(pageInput(page)).toHaveCount(0);
+
+  await indicator(page).click();
+  await pageInput(page).fill("12");
+  await page.locator("main").click({ position: { x: 5, y: 5 } });
+  await expect(indicator(page)).toHaveText("1 / 40");
+  await expect(pageInput(page)).toHaveCount(0);
+
+  await goTo(page, "abc");
+  await expect(indicator(page)).toHaveText("1 / 40");
+  await expect(pageInput(page)).toHaveCount(0);
+});
+
+test("typing in the page input doesn't trigger shortcuts", async ({ page }) => {
+  await openLong(page);
+  const theme = () => page.evaluate(() => document.documentElement.dataset.theme);
+  const before = await theme();
+  await indicator(page).click();
+  await page.keyboard.type("n");
+  expect(await theme()).toBe(before);
+});
+
+test("zoom after a jump keeps the place", async ({ page }) => {
+  await openLong(page);
+  await goTo(page, "25");
+  await expect(indicator(page)).toHaveText("25 / 40");
+  await scrollToPage(page, 27);
+  await expect(indicator(page)).toHaveText("28 / 40");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.waitForTimeout(300);
+  await expect(indicator(page)).toHaveText("28 / 40");
+});
+
+test("a jump doesn't leak into the next book opened", async ({ page }) => {
+  await page.goto("/");
+  await uploadInput(page).setInputFiles(fixture("mixed"));
+  await expect(indicator(page)).toHaveText("1 / 4");
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  const shelf = page.getByRole("dialog", { name: "Shelf" });
+  await shelf.getByTestId("shelf-upload").setInputFiles(fixture("long"));
+  await expect(indicator(page)).toHaveText("1 / 40");
+  await page.keyboard.press("Escape");
+  await goTo(page, "25");
+  await expect(indicator(page)).toHaveText("25 / 40");
+  await page.getByRole("button", { name: "Shelf", exact: true }).click();
+  await shelf.getByTestId("shelf-book").filter({ hasText: "mixed" }).click();
+  await expect(indicator(page)).toHaveText("1 / 4");
+});
+
+test("keyboard scrolling works right after a jump", async ({ page }) => {
+  await openLong(page);
+  await goTo(page, "10");
+  await expect(indicator(page)).toHaveText("10 / 40");
+  for (let i = 0; i < 4; i++) await page.keyboard.press("PageDown"); // a page is taller than one screen
+  await expect.poll(async () => Number((await indicator(page).innerText()).split(" / ")[0])).toBeGreaterThan(10);
 });

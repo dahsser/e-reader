@@ -21,6 +21,9 @@
           try { night = matchMedia("(prefers-color-scheme: dark)").matches; } catch (e) { night = false; }
         }
         document.documentElement.dataset.theme = night ? "night" : "day";
+        var original = false;
+        try { original = JSON.parse(localStorage.getItem("reader.settings")).originalImages === true; } catch (e) {}
+        document.documentElement.dataset.images = original ? "original" : "night";
       })();
     </script>
   </head>

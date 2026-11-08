@@ -1,18 +1,69 @@
+import { useState } from "react";
+
+/** Stable ref callback: selects once on mount, not on every re-render while editing. */
+const selectAll = (el: HTMLInputElement | null) => el?.select();
+
 export interface ToolbarProps {
   /** Present while a book is open. */
   page: { current: number; total: number } | null;
   zoom: number;
   night: boolean;
+  shelfOpen: boolean;
+  originalImages: boolean;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onShelf: () => void;
   onToggleNight: () => void;
+  onToggleImages: () => void;
+  /** 0-based page, already clamped to the book. */
+  onGoToPage: (page: number) => void;
 }
 
-export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onToggleNight }: ToolbarProps) {
+function PageIndicator({ current, total, onGoToPage }: { current: number; total: number; onGoToPage: (page: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        className="page-indicator"
+        data-testid="page-indicator"
+        title="Go to page"
+        onClick={() => setEditing(true)}
+      >
+        {current} / {total}
+      </button>
+    );
+  }
+  return (
+    <span className="page-indicator" data-testid="page-indicator">
+      <input
+        data-testid="page-input"
+        aria-label="Page number"
+        inputMode="numeric"
+        className="page-input"
+        defaultValue={current}
+        ref={selectAll}
+        autoFocus
+        onKeyDown={(e) => {
+          if (e.key === "Escape") {
+            setEditing(false);
+          } else if (e.key === "Enter") {
+            const n = parseInt(e.currentTarget.value, 10);
+            setEditing(false);
+            if (!Number.isNaN(n)) onGoToPage(Math.min(Math.max(n, 1), total) - 1);
+          }
+        }}
+        onBlur={() => setEditing(false)}
+      />{" "}
+      <span>/ {total}</span>
+    </span>
+  );
+}
+
+export function Toolbar({ page, zoom, night, shelfOpen, onZoomIn, onZoomOut, onShelf, onToggleNight, onGoToPage, originalImages, onToggleImages }: ToolbarProps) {
   return (
     <header className="toolbar" role="toolbar" aria-label="Reader controls">
-      <button type="button" aria-label="Shelf" title="Shelf" onClick={onShelf}>
+      <button type="button" aria-label="Shelf" aria-expanded={shelfOpen} title="Shelf" onClick={onShelf}>
         ☰
       </button>
       <span className="toolbar-spacer" />
@@ -25,12 +76,19 @@ export function Toolbar({ page, zoom, night, onZoomIn, onZoomOut, onShelf, onTog
           <button type="button" aria-label="Zoom in" onClick={onZoomIn}>
             +
           </button>
-          <span className="page-indicator" data-testid="page-indicator">
-            {page.current} / {page.total}
-          </span>
+          <PageIndicator current={page.current} total={page.total} onGoToPage={onGoToPage} />
         </>
       )}
       <span className="toolbar-spacer" />
+      {night && (
+        <button type="button" aria-label="Original images" aria-pressed={originalImages} title="Original images (I)" onClick={onToggleImages}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="9" cy="9" r="1.8" />
+            <path d="M21 16l-5-5-9 9" />
+          </svg>
+        </button>
+      )}
       <button type="button" aria-label="Night view" aria-pressed={night} title="Night view (N)" onClick={onToggleNight}>
         ☾
       </button>
