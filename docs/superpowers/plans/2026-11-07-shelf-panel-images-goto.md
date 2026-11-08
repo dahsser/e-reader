@@ -49,8 +49,8 @@
 - [ ] **Step 2: Run** `pnpm e2e reader.spec.ts` — the new tests FAIL (no `page-input`).
 - [ ] **Step 3: Implement.**
   - `useReaderSession`: a layout effect on `[opts.jump, layout, queue]` that handles each `jump.id` once (remember the last handled id in a ref): clamp the page to `0..sizes.length-1`, set `posRef.current = { page, fraction: 0 }`, set `el.scrollTop = scrollTopFor(posRef.current, layout.boxes)`. The normal scroll handler then updates the indicator, focus and saves.
-  - `App`: `const [jump, setJump] = useState<JumpRequest | null>(null)`; `onGoToPage = (p) => setJump({ page: p, id: Date.now() })`; clear `jump` to `null` wherever a book is opened or closed (where `setPage(...)` runs) so it never carries into another book. Pass `jump` to `Reader`, `onGoToPage` to `Toolbar`.
-  - `Toolbar`: the indicator becomes `<button type="button" className="page-indicator" data-testid="page-indicator" title="Go to page">{current} / {total}</button>`. Click → editing state rendering `<input data-testid="page-input" aria-label="Page number" inputMode="numeric" className="page-input">` (initial value = current, auto-focused and selected) followed by `<span>/ {total}</span>`. Enter: `parseInt`; NaN → cancel; else clamp 1..total and call `onGoToPage(n - 1)`; leave editing. Escape and blur → leave editing without jumping. Input width ≈ `4ch`, themed (`background: var(--app-bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent)`).
+  - `App`: `const [jump, setJump] = useState<JumpRequest | null>(null)`; `onGoToPage = (p) => setJump({ page: p, id: ++jumpSeq.current })` (a `useRef` counter, so two quick jumps never share an id); clear `jump` to `null` wherever a book is opened or closed (where `setPage(...)` runs) so it never carries into another book. Pass `jump` to `Reader`, `onGoToPage` to `Toolbar`.
+  - `Toolbar`: the indicator becomes `<button type="button" className="page-indicator" data-testid="page-indicator" title="Go to page">{current} / {total}</button>`. Click → editing state rendering `<input data-testid="page-input" aria-label="Page number" inputMode="numeric" className="page-input">` (initial value = current, auto-focused and selected) followed by `<span>/ {total}</span>`. Enter: `parseInt`; NaN → cancel; else clamp 1..total and call `onGoToPage(n - 1)`; leave editing. Escape and blur → leave editing without jumping. The indicator button keeps the toolbar's 14 px text and `tabular-nums` (override the `.toolbar button { font-size: 18px }` rule). Input width ≈ `4ch`, themed (`background: var(--app-bg); color: var(--fg); border: 1px solid color-mix(in srgb, var(--fg) 30%, transparent)`).
 - [ ] **Step 4: Run** `pnpm test && pnpm e2e && pnpm build` — all PASS.
 - [ ] **Step 5: Commit** `feat: go to a page by clicking the page indicator`.
 
@@ -71,6 +71,7 @@
 
 - [ ] **Step 1: Write failing unit tests.**
   - `classify.test.ts`: full-page scan → `{ photos: [], figures: [] }`; a dark rect of area ≥ 0.02 → in `photos`, not `figures`; a light rect (all-white pixels) of area 0.25 → in `figures`; a light rect of area 0.0005 → in neither; a dark rect of area 0.005 (below `MIN_PHOTO_AREA`, above `MIN_FIGURE_AREA`) → in `figures`. Keep the existing `lightShare`/`isFullPageScan` tests; port the `photoRects` ones to `classifyImages(...).photos`.
+  - `classify.test.ts` (tiled scans): five horizontal strips each `{w: 1, h: 0.18}` (light pixels) → `{ photos: [], figures: [] }` — a page is a scan when the **sum** of image areas (overlap ignored) is ≥ `FULL_PAGE_SCAN_AREA`, not only when one rect is. Without this, tiled scans would turn white with the toggle on.
   - `settings.test.ts`: `originalImages` defaults to `false`, round-trips `true` through `saveSettings`/`loadSettings`, non-boolean stored value → `false`.
   - `overlays.test.ts` CSS guard additionally expects the exact line `[data-theme="night"][data-images="original"] .figure-overlay { display: block; filter: ${PHOTO_FILTER}; }` and `.figure-overlay { position: absolute; display: none; }`.
 - [ ] **Step 2: Write failing e2e tests** in `e2e/night.spec.ts` (`imagesButton = page.getByRole("button", { name: "Original images" })`):
@@ -82,6 +83,7 @@
   - Existing photo tests stay as they are (photo page: `.photo-overlay` count 1, `.figure-overlay` count 0).
 - [ ] **Step 3: Run** `pnpm test && pnpm e2e night.spec.ts` — new tests FAIL.
 - [ ] **Step 4: Implement.**
+  - `isFullPageScan(rects)`: true when the sum of `w*h` over all rects is ≥ `FULL_PAGE_SCAN_AREA` (covers single full-page images and tiled strips).
   - `classifyImages`: scan → both empty; photo = area ≥ `MIN_PHOTO_AREA` and `lightShare ≤ MAX_LIGHT_SHARE`; figure = any other rect with area ≥ `MIN_FIGURE_AREA`. Read pixels only for rects that could be photos.
   - `createImageOverlays`: same pixel copy/positioning as today, one canvas per photo and per figure, class per kind. `PageView` calls it instead of `createPhotoOverlays`.
   - CSS (replace the night block's overlay lines):
@@ -93,7 +95,7 @@
     [data-theme="day"] .photo-overlay { display: none; }
     [data-theme="night"][data-images="original"] .figure-overlay { display: block; filter: brightness(0.85); }
     ```
-  - Settings: `originalImages` loaded (boolean else `false`) and saved alongside `night`/`zoom`. `index.html` pre-paint script also sets `document.documentElement.dataset.images` from `s.originalImages` (`"original"` / `"night"`).
+  - Settings: `originalImages` loaded (boolean else `false`) and saved alongside `night`/`zoom`. `index.html` pre-paint script also sets `document.documentElement.dataset.images` to `"original"` only when `s.originalImages === true`, otherwise `"night"` (existing users have no `originalImages` key; mirrors the `false` default).
   - `App`: `toggleImages` mirrors `toggleNight` (update ref + state, `applyImages` synchronously, save). Call `applyImages` at startup next to `applyTheme`. The existing `n` key handler also handles `i` → `toggleImages`, only when night is on (same typing/modifier guards).
   - `Toolbar`: when `night`, render left of ☾: `<button type="button" aria-label="Original images" aria-pressed={originalImages} title="Original images (I)">` containing an inline 18 px SVG picture icon (frame + mountain + sun, `stroke="currentColor"`, `fill="none"`).
 - [ ] **Step 5: Run** `pnpm test && pnpm e2e && pnpm build` — all PASS.
