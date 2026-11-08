@@ -1,6 +1,7 @@
 export interface Settings {
   night: boolean;
   zoom: number;
+  originalImages: boolean;
 }
 
 export const ZOOM_MIN = 0.5;
@@ -16,7 +17,7 @@ export function clampZoom(z: number): number {
 }
 
 // NOTE: index.html has an inline pre-paint script that duplicates the night
-// default logic (same key, same matchMedia fallback). Keep them in sync.
+// default logic (same key, same matchMedia fallback, originalImages === true). Keep them in sync.
 export function loadSettings(): Settings {
   let stored: unknown;
   try {
@@ -37,12 +38,12 @@ export function loadSettings(): Settings {
     }
   }
   const zoom = typeof s.zoom === "number" && Number.isFinite(s.zoom) ? clampZoom(s.zoom) : 1;
-  return { night, zoom };
+  return { night, zoom, originalImages: s.originalImages === true };
 }
 
 export function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ night: s.night, zoom: s.zoom }));
+    localStorage.setItem(KEY, JSON.stringify({ night: s.night, zoom: s.zoom, originalImages: s.originalImages }));
   } catch {
     // Storage unavailable or full: settings just won't persist.
   }

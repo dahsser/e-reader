@@ -1,5 +1,5 @@
 import { memo, useCallback, useLayoutEffect, useRef, useSyncExternalStore } from "react";
-import { createPhotoOverlays, releaseOverlays } from "../night/overlays";
+import { createImageOverlays, releaseOverlays } from "../night/overlays";
 import type { PageBox } from "./layout";
 import type { RenderQueue } from "./renderQueue";
 
@@ -29,7 +29,7 @@ export const PageView = memo(function PageView({ index, box, top, left, queue, o
       host.replaceChildren();
       return;
     }
-    const overlays = createPhotoOverlays(rendered.canvas, rendered.imageRects);
+    const overlays = createImageOverlays(rendered.canvas, rendered.imageRects);
     host.replaceChildren(rendered.canvas, ...overlays);
     return () => releaseOverlays(overlays);
   }, [rendered]);

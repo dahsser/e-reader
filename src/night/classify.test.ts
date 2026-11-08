@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import { isFullPageScan, lightShare, photoRects } from "./classify";
+import { MIN_FIGURE_AREA, classifyImages, isFullPageScan, lightShare } from "./classify";
+
+const photoRects = (rects: ReturnType<typeof rect>[], read: () => Uint8ClampedArray) => classifyImages(rects, read).photos;
 
 function solid(pixels: number, r: number, g = r, b = r): Uint8ClampedArray {
   const a = new Uint8ClampedArray(pixels * 4);
@@ -42,6 +44,33 @@ describe("night classification", () => {
     expect(isFullPageScan([rect(1, 1)])).toBe(true);
     expect(isFullPageScan([rect(0.5, 0.5)])).toBe(false);
     expect(photoRects([rect(1, 1), rect(0.3, 0.3)], read)).toEqual([]);
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  test("full-page scan yields no photos or figures", () => {
+    expect(classifyImages([rect(1, 1)], () => solid(100, 255))).toEqual({ photos: [], figures: [] });
+  });
+
+  test("tiled scan strips (summed area) count as a full-page scan", () => {
+    const strips = [0, 1, 2, 3, 4].map((i) => ({ x: 0, y: i * 0.2, w: 1, h: 0.18 }));
+    expect(isFullPageScan(strips)).toBe(true);
+    expect(classifyImages(strips, () => solid(100, 255))).toEqual({ photos: [], figures: [] });
+  });
+
+  test("dark rect is a photo, light rect a figure, specks are neither", () => {
+    expect(MIN_FIGURE_AREA).toBe(0.001);
+    const dark = rect(0.2, 0.2);
+    const light = rect(0.5, 0.5);
+    const speck = rect(0.02, 0.025);
+    const r = classifyImages([dark, light, speck], (q) => (q === dark ? solid(100, 0x20) : solid(100, 255)));
+    expect(r.photos).toEqual([dark]);
+    expect(r.figures).toEqual([light]);
+  });
+
+  test("dark rect below photo area but above figure area is a figure", () => {
+    const small = rect(0.05, 0.1);
+    const read = vi.fn(() => solid(100, 0x20));
+    expect(classifyImages([small], read)).toEqual({ photos: [], figures: [small] });
     expect(read).not.toHaveBeenCalled();
   });
 

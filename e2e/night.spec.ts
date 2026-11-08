@@ -8,6 +8,7 @@ test.use({ viewport: { width: 800, height: 1100 } });
 type RGB = [number, number, number];
 
 const pageWrapper = (page: Page, index: number) => page.locator(`[data-testid="page"][data-page="${index}"]`);
+const imagesButton = (page: Page) => page.getByRole("button", { name: "Original images" });
 const nightButton = (page: Page) => page.getByRole("button", { name: "Night view" });
 
 async function open(page: Page, name: "mixed" | "scan", pages: number) {
@@ -158,4 +159,67 @@ test.describe("dark OS preference", () => {
     const wrapper = await showPage(page, 0);
     expectChannelsAtMost(await elementPixel(wrapper, 0.02, 0.02), 45);
   });
+});
+
+function expectChannelsAtLeast(px: RGB, min: number) {
+  for (const c of px) expect(c, `pixel ${px.join(",")}`).toBeGreaterThanOrEqual(min);
+}
+
+async function setImages(page: Page, on: boolean) {
+  await imagesButton(page).click();
+  await expect(imagesButton(page)).toHaveAttribute("aria-pressed", String(on));
+  await expect(page.locator("html")).toHaveAttribute("data-images", on ? "original" : "night");
+}
+
+test("original-images button only shows in night view", async ({ page }) => {
+  await open(page, "mixed", 4);
+  await expect(imagesButton(page)).toHaveCount(0);
+  await setNight(page, true);
+  await expect(imagesButton(page)).toBeVisible();
+  await expect(imagesButton(page)).toHaveAttribute("aria-pressed", "false");
+});
+
+test("original images show raster diagrams with their white background", async ({ page }) => {
+  await open(page, "mixed", 4);
+  await setNight(page, true);
+  const wrapper = await showPage(page, 2);
+  expectChannelsAtMost(await elementPixel(wrapper, 0.06, 0.262), 60);
+  await expect(wrapper.locator(".figure-overlay")).toHaveCount(1);
+  await setImages(page, true);
+  expectChannelsAtLeast(await elementPixel(wrapper, 0.06, 0.262), 180);
+  expectChannelsAtMost(await elementPixel(wrapper, 0.02, 0.02), 45);
+  await expect(wrapper.locator(".figure-overlay")).toHaveCount(1);
+  await setImages(page, false);
+  expectChannelsAtMost(await elementPixel(wrapper, 0.06, 0.262), 60);
+});
+
+test("original images: transparent line art gets a white background", async ({ page }) => {
+  await open(page, "mixed", 4);
+  await setNight(page, true);
+  const wrapper = await showPage(page, 3);
+  await setImages(page, true);
+  expectChannelsAtLeast(await elementPixel(wrapper, 0.232, 0.28), 180);
+});
+
+test("original images leave full-page scans dark", async ({ page }) => {
+  await open(page, "scan", 2);
+  await setNight(page, true);
+  const wrapper = await showPage(page, 0);
+  await setImages(page, true);
+  expectChannelsAtMost(await elementPixel(wrapper, 0.02, 0.02), 60);
+  await expect(wrapper.locator(".figure-overlay")).toHaveCount(0);
+});
+
+test("original images persists across reload and key i toggles", async ({ page }) => {
+  await open(page, "mixed", 4);
+  await setNight(page, true);
+  await setImages(page, true);
+  await page.reload();
+  await expect(page.getByTestId("page-indicator")).toHaveText("1 / 4");
+  await expect(page.locator("html")).toHaveAttribute("data-images", "original");
+  await expect(imagesButton(page)).toHaveAttribute("aria-pressed", "true");
+  await page.locator("main").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("i");
+  await expect(page.locator("html")).toHaveAttribute("data-images", "night");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("reader.settings") ?? "null")?.originalImages)).toBe(false);
 });

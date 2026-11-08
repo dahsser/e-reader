@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PageSize, PdfDoc } from "./engine/types";
-import { applyTheme } from "./night/theme";
+import { applyImages, applyTheme } from "./night/theme";
 import { Reader } from "./reader/Reader";
 import type { JumpRequest, ReadingPosition } from "./reader/useReaderSession";
 import { getServices } from "./services";
@@ -147,6 +147,7 @@ export default function App() {
   // Startup: reopen the last book, else the first on the shelf that opens, else show the empty state.
   useEffect(() => {
     applyTheme(settingsRef.current.night);
+    applyImages(settingsRef.current.originalImages);
     let cancelled = false;
     (async () => {
       try {
@@ -295,18 +296,32 @@ export default function App() {
     saveSettings(updated);
   }, []);
 
-  // `n` toggles night view anywhere, except while typing or with modifiers held.
+  const toggleImages = useCallback(() => {
+    const updated = { ...settingsRef.current, originalImages: !settingsRef.current.originalImages };
+    settingsRef.current = updated;
+    applyImages(updated.originalImages);
+    setSettings(updated);
+    saveSettings(updated);
+  }, []);
+
+  // `n` toggles night view (and `i` original images, in night view) anywhere, except while typing or with modifiers held.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "n" || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+      if ((e.key !== "n" && e.key !== "i") || e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
       const t = e.target;
       if (t instanceof HTMLElement && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+      if (e.key === "i") {
+        if (!settingsRef.current.night) return;
+        e.preventDefault();
+        toggleImages();
+        return;
+      }
       e.preventDefault();
       toggleNight();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleNight]);
+  }, [toggleNight, toggleImages]);
 
   // Ctrl/⌘ + = / + / - / 0 while reading.
   useEffect(() => {
@@ -347,10 +362,12 @@ export default function App() {
         page={book ? { current: page + 1, total: book.doc.numPages } : null}
         zoom={settings.zoom}
         night={settings.night}
+        originalImages={settings.originalImages}
         onZoomIn={zoomIn}
         onZoomOut={zoomOut}
         onShelf={openShelf}
         onToggleNight={toggleNight}
+        onToggleImages={toggleImages}
         onGoToPage={onGoToPage}
       />
       {persistNotice && <PersistNotice onDismiss={onDismissPersistNotice} />}

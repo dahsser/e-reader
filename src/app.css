@@ -43,9 +43,11 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: var(--app-bg
 
 /* Night view (style D). Values must stay identical to src/night/theme.ts (guarded by overlays.test.ts). */
 .photo-overlay { position: absolute; display: block; }
+.figure-overlay { position: absolute; display: none; }
 [data-theme="night"] .page-base { filter: invert(0.88) hue-rotate(180deg) sepia(0.18); }
 [data-theme="night"] .photo-overlay { filter: brightness(0.85); }
 [data-theme="day"] .photo-overlay { display: none; }
+[data-theme="night"][data-images="original"] .figure-overlay { display: block; filter: brightness(0.85); }
 
 /* Empty / loading */
 .loading { flex: 1; }
